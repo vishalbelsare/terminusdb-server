@@ -1,8 +1,8 @@
-:- module(journaling,[write_triple/6,
-                      initialise_graph/5,
-                      finalise_graph/5,
-                      set_graph_stream/5,
-                      close_graph_stream/5]).
+:- module(journaling,[write_triple/5,
+                      initialise_graph/4,
+                      finalise_graph/4,
+                      set_graph_stream/4,
+                      close_graph_stream/4]).
  
 /** <module> Journaling
  * 
@@ -11,57 +11,57 @@
  * 
  * * * * * * * * * * * * * COPYRIGHT NOTICE  * * * * * * * * * * * * * * *
  *                                                                       *
- *  This file is part of TerminusDB.                                      *
+ *  This file is part of TerminusDB.                                     *
  *                                                                       *
- *  TerminusDB is free software: you can redistribute it and/or modify    *
+ *  TerminusDB is free software: you can redistribute it and/or modify   *
  *  it under the terms of the GNU General Public License as published by *
  *  the Free Software Foundation, either version 3 of the License, or    *
  *  (at your option) any later version.                                  *
  *                                                                       *
- *  TerminusDB is distributed in the hope that it will be useful,         *
+ *  TerminusDB is distributed in the hope that it will be useful,        *
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of       *
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the        *
  *  GNU General Public License for more details.                         *
  *                                                                       *
  *  You should have received a copy of the GNU General Public License    *
- *  along with TerminusDB.  If not, see <https://www.gnu.org/licenses/>.  *
+ *  along with TerminusDB.  If not, see <https://www.gnu.org/licenses/>. *
  *                                                                       *
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  */ 
 
 :- use_module(types).
 :- use_module(utils).
-:- use_module(collection).
+:- use_module(database).
 :- use_module(prefixes).
  
 /** 
- * graph_stream(+C:collection_identifier,+G:graph_identifier,-Stream,-Type,-Ext) is det.  
+ * graph_stream(+G:graph_identifier,-Stream,-Type,-Ext) is det.  
  *
  * Stores the currently associated stream and its type with graph G. 
  */ 
-:- dynamic graph_stream/5.
+:- dynamic graph_stream/4.
 
 /** 
- * set_graph_stream(+C:collection_identifier,+G:graph_identifier,+Stream,+Type,+Ext) is det.  
+ * set_graph_stream(+G:graph_identifier,+Stream,+Type,+Ext) is det.  
  *
  * Stores the currently associated stream with graph G and its type. 
  * Raises an error if there is already an associated stream for graph G.
  */
-set_graph_stream(Collection_Id,Graph_Id,S,Type,Ext) :-
-    (   graph_stream(Collection_Id,Graph_Id,S0,Type,Ext)
-    ->  throw(graph_stream_already_set(Collection_Id,Graph_Id,S0,Type,Ext))
-    ;   assertz(graph_stream(Collection_Id,Graph_Id,S,Type,Ext))
+set_graph_stream(Graph_Id,S,Type,Ext) :-
+    (   graph_stream(Graph_Id,S0,Type,Ext)
+    ->  throw(graph_stream_already_set(Graph_Id,S0,Type,Ext))
+    ;   assertz(graph_stream(Graph_Id,S,Type,Ext))
     ).
 
 
 /** 
- * close_graph_stream(+C,+G,+Stream,+Type,+Ext) is det.  
+ * close_graph_stream(+G,+Stream,+Type,+Ext) is det.  
  *
  * Close stream associated with a given graph.
  */ 
-close_graph_stream(Collection_Id,Graph_Id,Stream,Type,Ext) :-
-    forall(graph_stream(Collection_Id,Graph_Id,Stream,Type,Ext),
-           (   retractall(graph_stream(Collection_Id,Graph_Id,Stream,Type,Ext)),
+close_graph_stream(Graph_Id,Stream,Type,Ext) :-
+    forall(graph_stream(Graph_Id,Stream,Type,Ext),
+           (   retractall(graph_stream(Graph_Id,Stream,Type,Ext)),
                flush_output(Stream),
                close(Stream)
            )).
@@ -72,14 +72,14 @@ close_graph_stream(Collection_Id,Graph_Id,Stream,Type,Ext) :-
  * Close all streams associated with all graphs.
  */ 
 closeStreams :-
-    forall(graph_stream(Collection_Id,Graph_Id,Stream,Type,Ext),
-           close_graph_stream(Collection_Id,Graph_Id,Stream,Type,Ext)).
+    forall(graph_stream(Graph_Id,Stream,Type,Ext),
+           close_graph_stream(Graph_Id,Stream,Type,Ext)).
 
 /* 
- * initialise_graph(Collection_ID,Graph_ID,Stream,Type,Ext) is semidet.
+ * initialise_graph(Graph_ID,Stream,Type,Ext) is semidet.
  */
-initialise_graph(Collection_Id,Graph_Id,Stream,Type,Ext) :-
-    graph_stream(Collection_Id,Graph_Id,Stream,Type,Ext),
+initialise_graph(Graph_Id,Stream,Type,Ext) :-
+    graph_stream(Graph_Id,Stream,Type,Ext),
     (   Ext=ttl
     ->  true % deprecated write_turtle_prelude(Stream)
     ;   Ext=ntr
@@ -89,12 +89,12 @@ initialise_graph(Collection_Id,Graph_Id,Stream,Type,Ext) :-
     ).
 
 /* 
- * initialise_graph(Collection_ID,Graph_ID,Stream,Type,Ext) is semidet.
+ * initialise_graph(Graph_ID,Stream,Type,Ext) is semidet.
  */
-finalise_graph(Colection_Id,Graph,Stream,Type,Ext) :-
-    graph_stream(Colection_Id,Graph,Stream,Type,Ext),
+finalise_graph(Graph,Stream,Type,Ext) :-
+    graph_stream(Graph,Stream,Type,Ext),
     (   Ext=ttl
-    ->  close_graph_stream(Colection_Id,Graph,Stream,Type,Ext)
+    ->  close_graph_stream(Graph,Stream,Type,Ext)
     ;   Ext=ntr
     ->  throw(unimplemented_storage_type(ntr))
     ;   Ext=hdt
@@ -102,14 +102,14 @@ finalise_graph(Colection_Id,Graph,Stream,Type,Ext) :-
     ).
 
 /** 
- * write_triple(+C,+G,+Type,+PX,+PY,+PZ) is det.
+ * write_triple(+G,+Type,+PX,+PY,+PZ) is det.
  * 
  * Write a triple to graph G where Ext is one of {ttl,ntl,hdt}
  * and Type is one of {pos,neg,chk}
  */ 
-write_triple(C,G,Type,PX,PY,PZ) :-
+write_triple(G,Type,PX,PY,PZ) :-
     debug(write_triple, 'PX ~q      PY ~q      PZ ~q', [PX, PY,PZ]),
-    graph_stream(C,G,Stream,Type,Ext),
+    graph_stream(G,Stream,Type,Ext),
     (   Ext=ttl
     ->  write_triple_turtle(PX,PY,PZ,Stream)
     ;   Ext=ntr
@@ -123,17 +123,17 @@ write_triple(C,G,Type,PX,PY,PZ) :-
  * Goal expansion for write_triple in order to 
  * make static code references to ontologies less painful.
  */
-user:goal_expansion(write_triple(DB,G,T,A,Y,Z),write_triple(DB,G,T,X,Y,Z)) :-
+user:goal_expansion(write_triple(G,T,A,Y,Z),write_triple(G,T,X,Y,Z)) :-
     \+ var(A),
     global_prefix_expand(A,X).
-user:goal_expansion(write_triple(DB,G,T,X,B,Z),write_triple(DB,G,T,X,Y,Z)) :-
+user:goal_expansion(write_triple(G,T,X,B,Z),write_triple(G,T,X,Y,Z)) :-
     \+ var(B),
     global_prefix_expand(B,Y).
-user:goal_expansion(write_triple(DB,G,T,X,Y,C),write_triple(DB,G,T,X,Y,Z)) :-
+user:goal_expansion(write_triple(G,T,X,Y,C),write_triple(G,T,X,Y,Z)) :-
     \+ var(C),
     \+ C = literal(_),
     global_prefix_expand(C,Z).
-user:goal_expansion(write_triple(DB,G,T,X,Y,literal(L)),write_triple(DB,G,T,X,Y,Object)) :-
+user:goal_expansion(write_triple(G,T,X,Y,literal(L)),write_triple(G,T,X,Y,Object)) :-
     \+ var(L),
     literal_expand(literal(L),Object).
 

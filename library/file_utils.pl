@@ -1,11 +1,10 @@
 :- module(file_utils,[
-              db_relative_path/1,
-              db_path/1,
+              storage_relative_path/1,
+              storage_path/1,
               touch/1,
               ensure_directory/1,
               sanitise_file_name/2,
-              collection_directory/2,
-              graph_directory/3,
+              graph_directory/2,
               subdirectories/2,
               files/2,
               directories/2,
@@ -24,15 +23,13 @@
               turtle_file_type/1,
               graph_file_timestamp_compare/3,
               graph_dir_timestamp_gt/2,
-              current_checkpoint_directory/3,
-              collections/0,
-              collections/1,
-              graphs/2,
-              make_checkpoint_directory/3,
+              current_checkpoint_directory/2,
+              graphs/1,
+              make_checkpoint_directory/2,
               ttl_to_hdt/2,
               ntriples_to_hdt/2,
               cleanup_edinburgh_escapes/1,
-              last_checkpoint_file/3,
+              last_checkpoint_file/2,
               checkpoint_to_turtle/3
           ]).
 
@@ -64,21 +61,21 @@
  */
 
 /** 
- * db_relative_path(-Path) is det.
+ * storage_relative_path(-Path) is det.
  * 
  * Storage location for hdt files 
  */
-db_relative_path('/storage/').
+storage_relative_path('/storage/').
 
 /** 
- * db_path(-Path) is det.
+ * storage_path(-Path) is det.
  * 
  */
-db_path(Path) :-
+storage_path(Path) :-
     once(
         file_search_path(terminus_home,BasePath)
     ), 
-    db_relative_path(RelPath),
+    storage_relative_path(RelPath),
     interpolate([BasePath,RelPath],Path).
 
 /** 
@@ -110,27 +107,31 @@ sanitise_file_name(G,F) :-
     www_form_encode(G,F).
 
 /** 
- * collection_directory(+Collection_ID,-Path) is det. 
+ * database_directory(+Database_ID,-Path) is det. 
  * 
  * Returns the path for a given graph 
  */
-collection_directory(Collection_ID,Path) :-
+
+/*  
+NOTE: This should no longer be used... (Gavin)
+
+database_directory(Database_ID,Path) :-
     once(file_search_path(terminus_home,BasePath)),
     db_relative_path(RelPath),
-    sanitise_file_name(Collection_ID,CSafe),
+    sanitise_file_name(Database_ID,CSafe),
     interpolate([BasePath,RelPath,CSafe],Path).
+*/
 
 /** 
- * graph_directory(+Collection_ID,+Graph_Id:graph_identifier,-Path) is det. 
+ * graph_directory(+Graph_Id:graph_identifier,-Path) is det. 
  * 
  * Returns the path for a given graph 
  */
-graph_directory(Collection_ID,G,Path) :-
+graph_directory(G,Path) :-
     once(file_search_path(terminus_home,BasePath)),
     db_relative_path(RelPath),
     sanitise_file_name(G,Gsafe),
-    sanitise_file_name(Collection_ID,CSafe),
-    interpolate([BasePath,RelPath,CSafe,'/',Gsafe],Path).
+    interpolate([BasePath,RelPath,Gsafe],Path).
 
 /** 
  * subdirectories(+Dir,-Dirs) is semidet.
@@ -357,12 +358,12 @@ graph_dir_timestamp_gt(Dir1,Dir2) :-
     Number1 > Number2. 
 
 /** 
- * current_checkpoint_directory(+Collection_ID,+Graph_Id:graph_identifer,-Path) is semidet. 
+ * current_checkpoint_directory(+Graph_Id:graph_identifer,-Path) is semidet. 
  * 
  * Return the latest checkpoint directory.
  */
-current_checkpoint_directory(Collection_ID,Graph_Id, Path) :-
-    graph_directory(Collection_ID,Graph_Id, GraphPath),
+current_checkpoint_directory(Graph_Id, Path) :-
+    graph_directory(Graph_Id, GraphPath),
     subdirectories(GraphPath,AllCheckpoints),
     (   predsort([Delta,X,Y]>>
              (   atom_number(X,XN), atom_number(Y,YN), XN < YN
@@ -375,60 +376,59 @@ current_checkpoint_directory(Collection_ID,Graph_Id, Path) :-
 
 
 /**
- * collections is det.
+ * databases is det.
  *
- * Writes a list of the current collections. 
+ * Writes a list of the current databases. 
  **/
-collections :-
-    collections(Cs),
-    format('Current Collections: ~q~n', [Cs]).
-    
-/** 
- * collections(-Collections:list(uri)) is det.
- * 
- * Return a list of all current graphs. 
- * FIX: This is probably a bit dangerous as newly constructed 
- * directories in the hdt dir will *look* like new graphs. 
- * Probably need some sort of metadata. 
- */ 
-collections(Collections) :-
-    db_path(Collection_Dir), 
-    subdirectories(Collection_Dir,Collection_Files),
-    include({Collection_Dir}/[Collection_File]>>(
-                interpolate([Collection_Dir,Collection_File,'/COLLECTION'], Collection_Marker_Path),
-                exists_file(Collection_Marker_Path)
-            ), Collection_Files, Valid_Collection_Files), 
-    maplist(sanitise_file_name,Collections,Valid_Collection_Files).
+/* 
+NOTE: This should no longer be used (Gavin)
 
-/*
- * graphs(?Collection_ID,-Graphs:list(uri)) is nondet.
+databases :-
+    databases(Cs),
+    format('Current Databases: ~q~n', [Cs]).
+   */
+
+/** 
+ * databases(-Databases:list(uri)) is det.
  * 
  * Return a list of all current graphs. 
  * FIX: This is probably a bit dangerous as newly constructed 
  * directories in the hdt dir will *look* like new graphs. 
  * Probably need some sort of metadata. 
  */
-graphs(Collection_ID,Graphs) :-
-    collections(Collections),
-    (   member(Collection_ID,Collections)
-    ->  sanitise_file_name(Collection_ID,Collection_Name),
-        db_path(Path),
-        interpolate([Path,Collection_Name], Collection_Path),
-        subdirectories(Collection_Path,Graph_Names),
-        include({Collection_Path}/[Name]>>(
-                    interpolate([Collection_Path,'/',Name],X),
-                    exists_directory(X)
-                ),Graph_Names,Valid_Graph_Names),
-        maplist([N,S]>>sanitise_file_name(N,S),Graphs,Valid_Graph_Names)
-    ;   Graphs = []).
+/* 
+NOTE: This should no longer be used (Gavin)
+
+databases(Databases) :-
+    db_path(Database_Dir), 
+    subdirectories(Database_Dir,Database_Files),
+    include({Database_Dir}/[Database_File]>>(
+                interpolate([Database_Dir,Database_File,'/DATABASE'], Database_Marker_Path),
+                exists_file(Database_Marker_Path)
+            ), Database_Files, Valid_Database_Files), 
+    maplist(sanitise_file_name,Databases,Valid_Database_Files).
+
+*/
+/*
+ * graphs(?Database_ID,-Graphs:list(uri)) is nondet.
+ * 
+ * Return a list of all current graphs. 
+ * FIX: This is probably a bit dangerous as newly constructed 
+ * directories in the hdt dir will *look* like new graphs. 
+ * Probably need some sort of metadata. 
+ */
+graphs(Graphs) :-
+    storage_path(Path),
+    subdirectories(Path,Graph_Names),
+    maplist([N,S]>>sanitise_file_name(N,S),Graphs,Graph_Names).
 
 /** 
- * make_checkpoint_directory(+Collection_ID,+Graph_ID:graph_identifer,-CPD) is det. 
+ * make_checkpoint_directory(+Graph_ID:graph_identifer,-CPD) is det. 
  * 
  * Create the current checkpoint directory
  */
-make_checkpoint_directory(Collection_ID, Graph_Id, CPD) :-
-    graph_directory(Collection_ID,Graph_Id, Graph_Path),
+make_checkpoint_directory(Graph_Id, CPD) :-
+    graph_directory(Graph_Id,Graph_Path),
     ensure_directory(Graph_Path),
     last_checkpoint_number(Graph_Path,M),
     N is M+1,
@@ -494,23 +494,23 @@ ntriples_to_hdt(FileIn,FileOut) :-
     close(Out).
 
 /* 
- * last_checkpoint_file(Collection,File) is det. 
+ * last_checkpoint_file(Graph,File) is det. 
  * 
  * Give the file location of the last checkpoint for 
  * transformation (to turtle json-ld etc). 
  */ 
-last_checkpoint_file(C,G,File) :-
-    current_checkpoint_directory(C,G,CPD),
+last_checkpoint_file(G,File) :-
+    current_checkpoint_directory(G,CPD),
     interpolate([CPD,'/1-ckp.hdt'],File).
 
 /** 
- * checkpoint_to_turtle(+C,+G,-Output_File) is det.
+ * checkpoint_to_turtle(+Database,+G,-Output_File) is det.
  * 
  * Create a hdt file from ttl using the rdf2hdt tool.
  */
-checkpoint_to_turtle(Collection,Graph,Output_File) :-
+checkpoint_to_turtle(Database,Graph,Output_File) :-
     
-    last_checkpoint_file(Collection,Graph,FileIn), 
+    last_checkpoint_file(Graph,FileIn), 
     user:file_search_path(terminus_home, Dir),
     get_time(T),floor(T,N),
     interpolate([Dir,'/tmp/',N,'.ntriples'],NTriples_File),
@@ -525,7 +525,7 @@ checkpoint_to_turtle(Collection,Graph,Output_File) :-
     ;   true),
     close(NT_Out),
     
-    get_collection_prefix_list(Collection,List),
+    get_database_prefix_list(Database,List),
     prefix_list_to_rapper_args(List,Prefix_Args),
     append([['-i','ntriples','-o','turtle'],Prefix_Args,[NTriples_File]], Args),
 

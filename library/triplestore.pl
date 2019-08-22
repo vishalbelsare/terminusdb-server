@@ -1,18 +1,18 @@
 :- module(triplestore, [
-              destroy_graph/2,
-              make_empty_graph/2,
+              destroy_graph/1,
+              make_empty_graph/1,
               destroy_indexes/0,
               sync_from_journals/0,
-              sync_from_journals/2,
-              xrdf/5,
-              insert/5,
-              delete/5,
-              update/6,
-              commit/2,
-              rollback/2,
-              check_graph_exists/2,
-              graph_checkpoint/3,
-              current_checkpoint_directory/3,
+              sync_from_journals/1,
+              xrdf/4,
+              insert/4,
+              delete/4,
+              update/5,
+              commit/1,
+              rollback/1,
+              check_graph_exists/1,
+              graph_checkpoint/2,
+              current_checkpoint_directory/2,
               last_checkpoint_number/2,
               with_output_graph/2,
               ttl_to_hdt/2,
@@ -56,31 +56,34 @@
  * 
  * Retract all dynamic elements of graph. 
  */
-retract_graph(Collection,Graph_Name) :-
-    schema:collection_schema_module(Collection,Graph_Name,Module), 
-    schema:cleanup_schema_module(Module),
-    retractall(xrdf_pos(Collection,Graph_Name,_,_,_)),
-    retractall(xrdf_neg(Collection,Graph_Name,_,_,_)),
-    retractall(xrdf_pos_trans(Collection,Graph_Name,_,_,_)),
-    retractall(xrdf_neg_trans(Collection,Graph_Name,_,_,_)).
+retract_graph(Graph_Name) :-
+    forall(
+        (   dependent_modules(Graph_Name, Modules),
+            member(Module, Modules)), 
+        schema:cleanup_schema_module(Module)
+    ),
+    retractall(xrdf_pos(Graph_Name,_,_,_)),
+    retractall(xrdf_neg(Graph_Name,_,_,_)),
+    retractall(xrdf_pos_trans(Graph_Name,_,_,_)),
+    retractall(xrdf_neg_trans(Graph_Name,_,_,_)).
 
 /** 
- * destroy_graph(+Collection,+Graph_Id:graph_identifier) is det. 
+ * destroy_graph(+Database,+Graph_Id:graph_identifier) is det. 
  * 
  * Completely remove a graph from disk.
- */ 
-destroy_graph(Collection,Graph_Name) :-
-    retract_graph(Collection, Graph_Name),
-    graph_directory(Collection, Graph_Name, GraphPath),
+ */
+destroy_graph(Graph_Name) :-
+    retract_graph(Graph_Name),
+    graph_directory(Graph_Name, GraphPath),
     delete_directory_and_contents(GraphPath).
 
 /** 
- * destroy_indexes(+C,+G) is det.
+ * destroy_indexes(+G) is det.
  * 
  * Destroy indexes for graph G in collection C. 
  */
-destroy_indexes(C,G) :-
-    current_checkpoint_directory(C,G,CPD),
+destroy_indexes(G) :-
+    current_checkpoint_directory(G,CPD),
     files(CPD,Entries),
     include(hdt_file_type,Entries,HDTEntries),
     maplist({CPD}/[H,F]>>(interpolate([CPD,'/',H],Path),
@@ -91,27 +94,27 @@ destroy_indexes(C,G) :-
 destroy_indexes :-
     forall(
         (
-            graphs(C,Gs),
+            graphs(Gs),
             member(G,Gs)
         ),
-        ignore(destroy_indexes(C,G))
+        ignore(destroy_indexes(G))
     ).
 
 /** 
- * sync_from_journals(+C,+G) is det.
+ * sync_from_journals(+G) is det.
  * 
  * Sync journals for a graph and collection
  */
-sync_from_journals(Collection,Graph_Name) :-
+sync_from_journals(Graph_Name) :-
     % First remove everything in the dynamic predicates.
-    (   retract_graph(Collection,Graph_Name),
-        hdt_transform_journals(Collection,Graph_Name),
-        get_truncated_queue(Collection,Graph_Name,Queue),
-        sync_queue(Collection,Graph_Name, Queue)
+    (   retract_graph(Graph_Name),
+        hdt_transform_journals(Graph_Name),
+        get_truncated_queue(Graph_Name,Queue),
+        sync_queue(Graph_Name, Queue)
     ->  true
     % in case anything failed, retract the graph
-    ;   retract_graph(Collection,Graph_Name),
-        throw(graph_sync_error(Collection-Graph_Name))
+    ;   retract_graph(Graph_Name),
+        throw(graph_sync_error(Graph_Name))
     ).
 
 /** 
@@ -141,8 +144,8 @@ type_compare(neg,pos,(>)).
  * 
  * Get the queue associated with a graph up to the first checkpoint if it exists. 
  */
-get_truncated_queue(C,G,Queue) :-
-    current_checkpoint_directory(C,G,DirPath), 
+get_truncated_queue(G,Queue) :-
+    current_checkpoint_directory(G,DirPath), 
     files(DirPath,Entries),
     include(hdt_file_type,Entries,HDTEntries),
     predsort([Delta,X,Y]>>(   graph_file_timestamp_compare(X,Y,Ord),
@@ -180,8 +183,8 @@ get_truncated_queue(C,G,Queue) :-
  * 
  * TODO: This has never been tested.
  */
-hdt_transform_journals(Collection_ID,Graph_Name) :-
-    graph_directory(Collection_ID,Graph_Name,DirPath),
+hdt_transform_journals(Graph_Name) :-
+    graph_directory(Graph_Name,DirPath),
     subdirectories(DirPath,Entries),
     forall(member(Entry,Entries),
            (   interpolate([DirPath,'/',Entry],Directory),
@@ -210,51 +213,50 @@ hdt_transform_journals(Collection_ID,Graph_Name) :-
           ).
 
 /** 
- * xrdf_pos_trans(+C:atom,+G:atom,?X,?Y,?Z) is nondet.
+ * xrdf_pos_trans(+G:atom,?X,?Y,?Z) is nondet.
  * 
  * The dynamic predicate which stores positive updates for transactions.
  * This is thread local - it only functions in a transaction
  */
-:- thread_local xrdf_pos_trans/5.
+:- thread_local xrdf_pos_trans/4.
 
 /** 
- * xrdf_neg_trans(+C:atom,+G:atom,?X,?Y,?Z) is nondet.
+ * xrdf_neg_trans(+G:atom,?X,?Y,?Z) is nondet.
  * 
  * The dynamic predicate which stores negative updates for transactions.
  */
-:- thread_local xrdf_neg_trans/5.
+:- thread_local xrdf_neg_trans/4.
 
 /** 
- * xrdf_pos(+C, +G, ?X,?Y,?Z) is nondet.
+ * xrdf_pos(+G,?X,?Y,?Z) is nondet.
  * 
  * The dynamic predicate which stores positive updates from the journal. 
  */
-:- dynamic xrdf_pos/5.
+:- dynamic xrdf_pos/4.
 
 /** 
- * xrdf_neg(+C:atom,+G:atom,?X,?Y,?Z) is nondet.
+ * xrdf_neg(+G:atom,?X,?Y,?Z) is nondet.
  * 
  * The dynamic predicate which stores negative updates from the journal. 
  */
-:- dynamic xrdf_neg/5.
+:- dynamic xrdf_neg/4.
 
 /**
- * check_graph_exists(+Collection_ID,+G:graph_identifier) is semidet.
+ * check_graph_exists(+G:graph_identifier) is semidet.
  * 
  * checks to see is the graph id in the current graph list
  **/
-check_graph_exists(C,G):-
-    graphs(C, G_List),
-    member(G, G_List),
-    !.  
+check_graph_exists(G):-
+    graphs(G_List),
+    memberchk(G, G_List).  
 
 /** 
- * graph_checkpoint(+C,+G,-HDT) is semidet.
+ * graph_checkpoint(+G,-HDT) is semidet.
  * 
  * Returns the last checkpoint HDT associated with a given graph. 
  */
-graph_checkpoint(C, G, HDT) :-
-    graph_hdt_queue(C, G, Queue),
+graph_checkpoint(G, HDT) :-
+    graph_hdt_queue(G, Queue),
     graph_checkpoint_search(Queue, HDT).
 
 graph_checkpoint_search([], _) :- fail.
@@ -266,28 +268,28 @@ graph_checkpoint_search([neg(_)|Rest], Result) :-
     graph_checkpoint_search(Rest, Result).
 
 /**
- * graph_hdt_queue(+C, +G, -HDTs) is semidet.
+ * graph_hdt_queue(+G, -HDTs) is semidet.
  *
  * Returns a queue of hdt files up to and including the last checkpoint.
- * This is recalculated by sync_queue/3.
+ * This is recalculated by sync_queue/2.
  */
-:- dynamic graph_hdt_queue/3.
+:- dynamic graph_hdt_queue/2.
 
 /** 
  * sync_queue(+Collection_ID,+G,+Queue) is det. % + exception
  * 
- * Update the xrdf_pos/5 and xrdf_neg/5 predicates and the 
- * graph_checkpoint/2 predicate from the current graph. 
+ * Update the xrdf_pos/4 and xrdf_neg/4 predicates and the 
+ * graph_checkpoint/1 predicate from the current graph. 
  */
-sync_queue(C, G, Queue) :-
+sync_queue(G, Queue) :-
     (   check_queue(Queue)
     ->  true
     ;   throw(malformed_graph_journal_queue(G))),
-    (   graph_hdt_queue(C, G, Old_Queue)
+    (   graph_hdt_queue(G, Old_Queue)
     ->  close_all_handles(Old_Queue)
     ;   true),
-    retractall(graph_hdt_queue(C, G,_)),
-    asserta(graph_hdt_queue(C, G, Queue)).
+    retractall(graph_hdt_queue(G,_)),
+    asserta(graph_hdt_queue(G, Queue)).
 
 /**
  * close_all_handles(+Queue:list) is det.
@@ -309,10 +311,10 @@ close_all_handles([Head|Rest]) :-
  * ckp is for new graph (initial checkpoint) or any thereafter. 
  */
 :- meta_predicate with_output_graph(?, 0).
-with_output_graph(graph(C,G,Type,Ext),Goal) :-
+with_output_graph(graph(G,Type,Ext),Goal) :-
     with_mutex(
         G,
-        (   current_checkpoint_directory(C,G,CPD),
+        (   current_checkpoint_directory(G,CPD),
             last_plane_number(CPD,M),
             N is M+1,
             %get_time(T),floor(T,N), %switch to sequence numbers
@@ -321,18 +323,18 @@ with_output_graph(graph(C,G,Type,Ext),Goal) :-
             catch(
                 (   
                     open(NewFile,write,Stream),
-                    set_graph_stream(C,G,Stream,Type,Ext),
-                    initialise_graph(C,G,Stream,Type,Ext),
+                    set_graph_stream(G,Stream,Type,Ext),
+                    initialise_graph(G,Stream,Type,Ext),
                     !, % Don't ever retreat!
                     (   once(call(Goal))
                     ->  true
                     ;   format(atom(Msg),'Goal (~q) in with_output_graph failed~n',[Goal]),
                         throw(transaction_error(Msg))
                     ),
-                    finalise_graph(C,G,Stream,Type,Ext)
+                    finalise_graph(G,Stream,Type,Ext)
                 ),
                 E,
-                (   finalise_graph(C,G,Stream,Type,Ext),
+                (   finalise_graph(G,Stream,Type,Ext),
                     throw(E)
                 )
             )
@@ -344,14 +346,14 @@ with_output_graph(graph(C,G,Type,Ext),Goal) :-
  * 
  * Create a new graph checkpoint from our current dynamic triple state
  */
-checkpoint(Collection_Id,Graph_Id) :-
-    make_checkpoint_directory(Collection_Id,Graph_Id, _),
+checkpoint(Graph_Id) :-
+    make_checkpoint_directory(Graph_Id, _),
     with_output_graph(
-        graph(Collection_Id,Graph_Id,ckp,ttl),
+        graph(Graph_Id,ckp,ttl),
         (
             forall(
-                xrdf(Collection_Id,Graph_Id,X,Y,Z),
-                write_triple(Collection_Id,Graph_Id,ckp,X,Y,Z)
+                xrdf(Graph_Id,X,Y,Z),
+                write_triple(Graph_Id,ckp,X,Y,Z)
             )
         )
     ).
@@ -375,36 +377,28 @@ check_queue([ckp(_HDT)]).
  * it reflects the current state of the database on file. 
  */ 
 sync_from_journals :-
-    collections(Collections),
-
     forall(
-        (   member(Collection,Collections),
-            graphs(Collection,Graphs),
+        (   graphs(Graphs),
             member(Graph_Name, Graphs)
         ),
         (
-            format("~n ** Syncing ~q in collection ~q ~n~n", [Graph_Name,Collection]),
-            catch(sync_from_journals(Collection,Graph_Name),
+            format("~n ** Syncing ~q ~n~n", [Graph_Name]),
+            catch(sync_from_journals(Graph_Name),
                   graph_sync_error(Graph_Name),
-                  format("~n ** ERROR: Graph ~s in Collection ~s failed to sync.~n~n", [Graph_Name,Collection]))      
+                  format("~n ** ERROR: Graph ~s failed to sync.~n~n", [Graph_Name]))      
         )
     ).
 
 /** 
- * make_empty_graph(+Collection_ID,+Graph) is det.
+ * make_empty_graph(+Graph) is det.
  * 
  * Create a new empty graph
  */
-make_empty_graph(Collection_ID,Graph_Id) :-
-    % create the collection if it doesn't exist
-    collection_directory(Collection_ID,Collection_Path),
-    ensure_directory(Collection_Path),
-    interpolate([Collection_Path,'/COLLECTION'],Collection_File),
-    touch(Collection_File),
+make_empty_graph(Graph_Id) :-
     % create the graph if it doesn't exist
-    graph_directory(Collection_ID,Graph_Id,Graph_Path),
+    graph_directory(Graph_Id,Graph_Path),
     ensure_directory(Graph_Path),
-    make_checkpoint_directory(Collection_ID,Graph_Id, CPD),
+    make_checkpoint_directory(Graph_Id, CPD),
     %get_time(T),floor(T,N),
     N=1,
     interpolate([CPD,'/',N,'-ckp.ttl'],TTLFile),
@@ -413,35 +407,35 @@ make_empty_graph(Collection_ID,Graph_Id) :-
     ttl_to_hdt(TTLFile,CKPFile).
 
 /** 
- * import_graph(+File,+Collection_ID,+Graph) is det.
+ * import_graph(+File,+Graph) is det.
  * 
  * This predicate imports a given File as the latest checkpoint of Graph_Name
  * 
  * File will be in either ntriples, turtle or hdt format. 
  */
-import_graph(File, Collection_ID, Graph_Id) :-    
+import_graph(File, Graph_Id) :-    
     graph_file_extension(File,Ext),
     (   Ext = hdt,
         hdt_open(_, File, [access(map), indexed(false)]), % make sure this is a proper HDT file
-        make_checkpoint_directory(Collection_ID,Graph_Id,CPD),
+        make_checkpoint_directory(Graph_Id,CPD),
         N=1,
         %get_time(T),floor(T,N),
         interpolate([CPD,'/',N,'-ckp.hdt'],NewFile),
         copy_file(File,NewFile)
     ;   Ext = ttl,
-        make_checkpoint_directory(Collection_ID,Graph_Id,CPD),
+        make_checkpoint_directory(Graph_Id,CPD),
         N=1,                
         %get_time(T),floor(T,N),
         interpolate([CPD,'/',N,'-ckp.hdt'],NewFile),
         ttl_to_hdt(File,NewFile)
     ;   Ext = ntr,
-        make_checkpoint_directory(Collection_ID,Graph_Id,CPD),
+        make_checkpoint_directory(Graph_Id,CPD),
         N=1,                
         %get_time(T),floor(T,N),
         interpolate([CPD,'/',N,'-ckp.hdt'],NewFile),
         ntriples_to_hdt(File,NewFile)
     ),
-    sync_from_journals(Collection_ID,Graph_Id).
+    sync_from_journals(Graph_Id).
 
 /** 
  * literal_to_canonical(+Lit,-Can) is det. 
@@ -471,59 +465,59 @@ canonicalise_object(O,C) :-
     ;   O=C).
 
 /** 
- * insert(+DB:atom,+G:graph_identifier,+X,+Y,+Z) is det.
+ * insert(+G:graph_identifier,+X,+Y,+Z) is det.
  * 
  * Insert quint into transaction predicates.
  */
-insert(DB,G,X,Y,O) :-
+insert(G,X,Y,O) :-
     canonicalise_object(Z,O),
-    (   xrdf(DB,G,X,Y,Z)
+    (   xrdf(G,X,Y,Z)
     ->  true
-    ;   asserta(xrdf_pos_trans(DB,G,X,Y,Z)),
-        (   xrdf_neg_trans(DB,G,X,Y,Z)
-        ->  retractall(xrdf_neg_trans(DB,G,X,Y,Z))
+    ;   asserta(xrdf_pos_trans(G,X,Y,Z)),
+        (   xrdf_neg_trans(G,X,Y,Z)
+        ->  retractall(xrdf_neg_trans(G,X,Y,Z))
         ;   true)).
 
-user:goal_expansion(insert(DB,G,A,Y,Z),insert(DB,G,X,Y,Z)) :-
+user:goal_expansion(insert(G,A,Y,Z),insert(G,X,Y,Z)) :-
     \+ var(A),
     global_prefix_expand(A,X).
-user:goal_expansion(insert(DB,G,X,B,Z),insert(DB,G,X,Y,Z)) :-
+user:goal_expansion(insert(G,X,B,Z),insert(G,X,Y,Z)) :-
     \+ var(B),
     global_prefix_expand(B,Y).
-user:goal_expansion(insert(DB,G,X,Y,C),insert(DB,G,X,Y,Z)) :-
+user:goal_expansion(insert(G,X,Y,C),insert(G,X,Y,Z)) :-
     \+ var(C),
     \+ C = literal(_),        
     global_prefix_expand(C,Z).
-user:goal_expansion(insert(DB,G,X,Y,literal(L)),insert(DB,G,X,Y,Object)) :-
+user:goal_expansion(insert(G,X,Y,literal(L)),insert(G,X,Y,Object)) :-
     \+ var(L),
     literal_expand(literal(L),Object).
 
 
 /** 
- * delete(+DB,+G,+X,+Y,+Z) is det.
+ * delete(+G,+X,+Y,+Z) is det.
  * 
  * Delete quad from transaction predicates.
  */
-delete(DB,G,X,Y,O) :-
+delete(G,X,Y,O) :-
     canonicalise_object(Z,O),
-    (   xrdf_pos_trans(DB,G,X,Y,Z)
-    ->  retractall(xrdf_pos_trans(DB,G,X,Y,Z))        
+    (   xrdf_pos_trans(G,X,Y,Z)
+    ->  retractall(xrdf_pos_trans(G,X,Y,Z))        
     ;   true),
-    (   xrdfdb(DB,G,X,Y,Z)
-    ->  asserta(xrdf_neg_trans(DB,G,X,Y,Z))
+    (   xrdfdb(G,X,Y,Z)
+    ->  asserta(xrdf_neg_trans(G,X,Y,Z))
     ;   true).
 
-user:goal_expansion(delete(DB,G,A,Y,Z),delete(DB,G,X,Y,Z)) :-
+user:goal_expansion(delete(G,A,Y,Z),delete(G,X,Y,Z)) :-
     \+ var(A),
     global_prefix_expand(A,X).
-user:goal_expansion(delete(DB,G,X,B,Z),delete(DB,G,X,Y,Z)) :-
+user:goal_expansion(delete(G,X,B,Z),delete(G,X,Y,Z)) :-
     \+ var(B),
     global_prefix_expand(B,Y).
-user:goal_expansion(delete(DB,G,X,Y,C),delete(DB,G,X,Y,Z)) :-
+user:goal_expansion(delete(G,X,Y,C),delete(G,X,Y,Z)) :-
     \+ var(C),
     \+ C = literal(_),                
     global_prefix_expand(C,Z).
-user:goal_expansion(delete(DB,G,X,Y,literal(L)),delete(DB,G,X,Y,Object)) :-
+user:goal_expansion(delete(G,X,Y,literal(L)),delete(G,X,Y,Object)) :-
     \+ var(L),
     literal_expand(literal(L),Object).
 
@@ -532,82 +526,82 @@ new_triple(X,_,Z,predicate(Y2),X,Y2,Z).
 new_triple(X,Y,_,object(Z2),X,Y,Z2).
 
 /** 
- * update(+DB,+G,+X,+Y,+Z,+G,+Action) is det.
+ * update(+G,+X,+Y,+Z,+G,+Action) is det.
  * 
  * Update transaction graphs
  */ 
-update(DB,G,X,Y,Z,Action) :-
-    delete(DB,G,X,Y,Z),
+update(G,X,Y,Z,Action) :-
+    delete(G,X,Y,Z),
     new_triple(X,Y,Z,Action,X1,Y1,Z1),
-    insert(DB,G,X1,Y1,Z1).
+    insert(G,X1,Y1,Z1).
 
-user:goal_expansion(update(DB,G,A,Y,Z,Act),update(DB,G,X,Y,Z,Act)) :-
+user:goal_expansion(update(G,A,Y,Z,Act),update(G,X,Y,Z,Act)) :-
     \+ var(A),
     global_prefix_expand(A,X).
-user:goal_expansion(update(DB,G,X,B,Z,Act),update(DB,G,X,Y,Z,Act)) :-
+user:goal_expansion(update(G,X,B,Z,Act),update(G,X,Y,Z,Act)) :-
     \+ var(B),
     global_prefix_expand(B,Y).
-user:goal_expansion(update(DB,G,X,Y,C,Act),update(DB,G,X,Y,Z,Act)) :-
+user:goal_expansion(update(G,X,Y,C,Act),update(G,X,Y,Z,Act)) :-
     \+ var(C),
     \+ C = literal(_),
     global_prefix_expand(C,Z).
-user:goal_expansion(update(DB,G,X,Y,literal(L),Act),update(DB,G,X,Y,Object,Act)) :-
+user:goal_expansion(update(G,X,Y,literal(L),Act),update(G,X,Y,Object,Act)) :-
     \+ var(L),
     literal_expand(literal(L),Object).
 
 /** 
- * commit(+C:collection_id,+G:graph_id) is det.
+ * commit(+G:graph_id) is det.
  * 
  * Commits the current transaction state to backing store and dynamic predicate
  * for a given collection and graph.
  */
-commit(CName,GName) :-
+commit(GName) :-
     % Time order here is critical as we actually have a time stamp for ordering.
     % negative before positive
     % graph_id_name(G,GName),
     with_output_graph(
-            graph(CName,GName,neg,ttl),
+            graph(GName,neg,ttl),
             (   forall(
-                     xrdf_neg_trans(CName,GName,X,Y,Z),
+                     xrdf_neg_trans(GName,X,Y,Z),
                      (   % journal
-                         write_triple(CName,GName,neg,X,Y,Z),
+                         write_triple(GName,neg,X,Y,Z),
                          % dynamic 
-                         retractall(xrdf_pos(CName,GName,X,Y,Z)),
-                         retractall(xrdf_neg(CName,GName,X,Y,Z)),
-                         asserta(xrdf_neg(CName,GName,X,Y,Z))
+                         retractall(xrdf_pos(GName,X,Y,Z)),
+                         retractall(xrdf_neg(GName,X,Y,Z)),
+                         asserta(xrdf_neg(GName,X,Y,Z))
                      ))
             )
     ),
-    retractall(xrdf_neg_trans(CName,GName,X,Y,Z)),
+    retractall(xrdf_neg_trans(GName,X,Y,Z)),
     
     with_output_graph(
-            graph(CName,GName,pos,ttl),
+            graph(GName,pos,ttl),
             (   forall(
-                    xrdf_pos_trans(CName,GName,X,Y,Z),
+                    xrdf_pos_trans(GName,X,Y,Z),
                      
                     (% journal
-                        write_triple(CName,GName,pos,X,Y,Z),
+                        write_triple(GName,pos,X,Y,Z),
                         % dynamic
-                        retractall(xrdf_pos(CName,GName,X,Y,Z)),
-                        retractall(xrdf_neg(CName,GName,X,Y,Z)),
-                        asserta(xrdf_pos(CName,GName,X,Y,Z))
+                        retractall(xrdf_pos(GName,X,Y,Z)),
+                        retractall(xrdf_neg(GName,X,Y,Z)),
+                        asserta(xrdf_pos(GName,X,Y,Z))
                     ))
             )
     ),
-    retractall(xrdf_pos_trans(CName,GName,X,Y,Z)).
+    retractall(xrdf_pos_trans(GName,X,Y,Z)).
 
 /** 
  * rollback(+Collection_Id,+Graph_Id:graph_identifier) is det.
  * 
  * Rollback the current transaction state.
  */
-rollback(Collection_Id,GName) :-
+rollback(GName) :-
     % graph_id_name(Graph_Id, GName),
-    retractall(xrdf_pos_trans(Collection_Id,GName,X,Y,Z)),
-    retractall(xrdf_neg_trans(Collection_Id,GName,X,Y,Z)). 
+    retractall(xrdf_pos_trans(GName,X,Y,Z)),
+    retractall(xrdf_neg_trans(GName,X,Y,Z)). 
 
 /** 
- * xrdf(+Collection_Id,+Graph_Id,?Subject,?Predicate,?Object) is nondet.
+ * xrdf(+Graph_Id,?Subject,?Predicate,?Object) is nondet.
  * 
  * The basic predicate implementing the the RDF database.
  * This layer has the transaction updates included.
@@ -615,28 +609,29 @@ rollback(Collection_Id,GName) :-
  * Graph is either an atom or a list of atoms, referring to the name(s) of the graph(s).
  */
 % temporarily remove id behaviour.
-xrdf(C,G,X,Y,Z) :-
-    xrdfid(C,G,X,Y,Z).
+xrdf(Gs,X,Y,Z) :-
+    member(G,Gs),
+    xrdfid(G,X,Y,Z).
 
-user:goal_expansion(xrdf(DB,G,A,Y,Z),xrdf(DB,G,X,Y,Z)) :-
+user:goal_expansion(xrdf(G,A,Y,Z),xrdf(G,X,Y,Z)) :-
     \+ var(A),
     global_prefix_expand(A,X).
-user:goal_expansion(xrdf(DB,G,X,B,Z),xrdf(DB,G,X,Y,Z)) :-
+user:goal_expansion(xrdf(G,X,B,Z),xrdf(G,X,Y,Z)) :-
     \+ var(B),
     global_prefix_expand(B,Y).
-user:goal_expansion(xrdf(DB,G,X,Y,C),xrdf(DB,G,X,Y,Z)) :-
+user:goal_expansion(xrdf(G,X,Y,C),xrdf(G,X,Y,Z)) :-
     \+ var(C),
     \+ C = literal(_),
     global_prefix_expand(C,Z).
-user:goal_expansion(xrdf(DB,G,X,Y,literal(L)),xrdf(DB,G,X,Y,Object)) :-
+user:goal_expansion(xrdf(G,X,Y,literal(L)),xrdf(G,X,Y,Object)) :-
     \+ var(L),
     literal_expand(literal(L),Object).
 
-xrdfid(C,G,X0,Y0,Z0) :-
+xrdfid(G,X0,Y0,Z0) :-
     !,
-    (   xrdf_pos_trans(C,G,X0,Y0,Z0)      % If in positive graph, return results
-    ;   xrdfdb(C,G,X0,Y0,Z0),             % or a lower plane
-        \+ xrdf_neg_trans(C,G,X0,Y0,Z0)   % but only if it's not negative
+    (   xrdf_pos_trans(G,X0,Y0,Z0)      % If in positive graph, return results
+    ;   xrdfdb(G,X0,Y0,Z0),             % or a lower plane
+        \+ xrdf_neg_trans(G,X0,Y0,Z0)   % but only if it's not negative
     ). 
         
 /** 
@@ -644,8 +639,8 @@ xrdfid(C,G,X0,Y0,Z0) :-
  * 
  * This layer has only those predicates with backing store.
  */ 
-xrdfdb(C,G,X,Y,Z) :-
-    graph_hdt_queue(C,G, Queue),
+xrdfdb(G,X,Y,Z) :-
+    graph_hdt_queue(G,Queue),
     xrdf_search_queue(Queue,X,Y,Z).
 
 /* 
@@ -704,8 +699,6 @@ with_transaction(Options,Goal) :-
     with_mutex(transaction,
                (   member(graphs(Graph_Id_Bag),Options),
                    !,
-                   member(collection(C),Options),
-                   !,
                    sort(Graph_Id_Bag,Graph_Ids),
                    !,
                    % if we can't get graphs, there is nothing interesting to do anyhow. 
@@ -728,14 +721,14 @@ with_transaction(Options,Goal) :-
                            ),
                            SuccessFlag = true
                        ->  forall(member(G,Graph_Ids),
-                                  (   commit(C,G),
-                                      sync_from_journals(C,G)))
+                                  (   commit(G),
+                                      sync_from_journals(G)))
                        % We have succeeded in running the goal but Success is false
-                       ;   forall(member(G,Graph_Ids),rollback(C,G))
+                       ;   forall(member(G,Graph_Ids),rollback(G))
                        )
                    ->  true
                    % We have not succeeded in running goal, so we need to cleanup
-                   ;   forall(member(G,Graph_Ids),rollback(C,G)),
+                   ;   forall(member(G,Graph_Ids),rollback(G)),
                        fail
                    )
                )

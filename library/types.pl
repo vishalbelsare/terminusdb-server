@@ -9,9 +9,8 @@
               is_object_or_id/1,
               is_graph_identifier/1,
               is_prefix_db/1,
-              is_collection_identifier/1,
               is_empty_graph_name/1,
-              is_graph/1
+              is_database/1
           ]).
 
 /** <module> Types
@@ -148,11 +147,11 @@ is_number_compat(X) :-
  * is_graph_identifier(X) is semidet.
  *
  * Type of a graph identifier object
+ *
+ * This should probably be only a list or atom rather than both. 
  */
 is_graph_identifier(GID) :-
     atom(GID).
-is_graph_identifier(GIDs) :-
-    maplist(atom,GIDs).
 
 error:has_type(graph_identifier, X) :-
     is_graph_identifier(X).
@@ -173,15 +172,15 @@ error:has_type(prefix_db, X) :-
 
 
 /* 
- * is_collection_identifier(X) is semidet.
+ * is_database_identifier(X) is semidet.
  * 
  * Type of a collection identifier
  */ 
-is_collection_identifier(X) :-
+is_database_identifier(X) :-
     atom(X).
 
-error:has_type(collection_identifier, X) :-
-    is_collection_identifier(X).
+error:has_type(database_identifier, X) :-
+    is_database_identifier(X).
 
 /**
  * is_empty_graph_name(+Graph_Id:graph_identifier) is semidet.
@@ -191,25 +190,24 @@ error:has_type(collection_identifier, X) :-
  * for a null object.
  **/
 is_empty_graph_name(Graph_Id):-
-    member(Graph_Id, [false, @(false), none]),
+    member(Graph_Id, [false, @(false), none, []]),
     !.
 
 error:has_type(rdf_object, Rdf_Object):-
     is_rdf_object(Rdf_Object).
 
 /* 
- * is_graph(Graph) is semidet.
- * 
+ * is_database(DB) is semidet.
  * 
  */
-is_graph(graph(Collection,Instance,Inference,Schema,Error_Instance,Error_Schema)) :-
-    is_graph_identifier(Collection),
-    is_graph_identifier(Instance),
-    is_graph_identifier(Inference),
-    is_graph_identifier(Schema),
-    is_graph_identifier(Error_Instance),
-    is_graph_identifier(Error_Schema).
+is_database(database(Name,Instance,Inference,Schema,Error_Instance,Error_Schema)) :-
+    is_database_identifier(Name),
+    maplist(is_graph_identifier,Instance),
+    maplist(is_graph_identifier,Inference),
+    maplist(is_graph_identifier,Schema),
+    maplist(is_graph_identifier,Error_Instance),
+    maplist(is_graph_identifier,Error_Schema).
 
-error:has_type(graph, X) :-
-    is_graph(X).
+error:has_type(database, X) :-
+    is_database(X).
 

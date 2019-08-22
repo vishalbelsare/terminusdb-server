@@ -57,7 +57,7 @@
 :- use_module(library(validate_schema), except([entity/2])).
 :- use_module(library(validate_instance)).
 :- use_module(library(inference)).
-:- use_module(library(collection)).
+:- use_module(library(database)).
 :- use_module(library(triplestore)).
 :- use_module(library(schema), []).
 :- use_module(library(types)).

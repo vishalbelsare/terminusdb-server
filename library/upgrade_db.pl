@@ -52,7 +52,7 @@
  * 
  * Supplies the current version number of the DB
  */ 
-database_version('0.1.0').
+database_version('0.1.1').
 
 /*
  * get_db_version(-Version) is det.
@@ -78,7 +78,7 @@ get_db_version(Version) :-
  * Set the Database version
  */ 
 set_db_version(Version) :- 
-    db_path(DB_Path),
+    storage_path(DB_Path),
     interpolate([DB_Path,'VERSION'],Version_File),
     setup_call_cleanup(
         open(Version_File,update, Stream),
@@ -91,11 +91,15 @@ set_db_version(Version) :-
  *
  * Try to guess the collection name of graph
  */
+/* 
+Collections are gone. 
+
 guess_collection_name(Graph_Name,Collection) :-
     re_matchsub('(?<Collection>(.*))%2fgraph%2f(main|model|import|error).*',
                 Graph_Name,
                 Dict, []),
     get_dict('Collection',Dict,Collection).
+*/
 
 /* 
  * accessible(Version1,Version2,Path) is det. 
@@ -148,6 +152,10 @@ user:term_expansion((run_upgrade_step(X,Y):-Body),
  * NOTE: shortcuts should go first in the clause order.
  */ 
 :- discontiguous run_upgrade_step/2.
+/* 
+
+Left as documentation  - we want no upgrade yet as we've no dbs in the wild.
+
 run_upgrade_step(none,'0.1.0') :-
     db_path(Path), 
     subdirectories(Path,Graph_Names),
@@ -166,3 +174,4 @@ run_upgrade_step(none,'0.1.0') :-
         )
     ),
     set_db_version('0.1.0').
+*/ 

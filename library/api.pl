@@ -52,8 +52,8 @@
 % Database utils
 :- use_module(library(database_utils)).
 
-% Graph construction utils
-:- use_module(library(collection)).
+% Database construction and accessors
+:- use_module(library(database)).
 
 % Frame and entity processing
 :- use_module(library(frame)).
@@ -273,11 +273,11 @@ document_handler(get, DB, Doc_ID, Request) :-
     % check access rights
     verify_access(Auth,terminus/get_document,DB_URI),
 
-    try_db_graph(DB_URI,Graph),
+    try_make_db(DB_URI,DBObj),
 
     try_doc_uri(DB_URI,Doc_ID,Doc_URI),
 
-    try_get_document(Doc_URI,Graph,JSON),
+    try_get_document(Doc_URI,DBObj,JSON),
 
     write_cors_headers(DB_URI),
     format('Content-type: application/json~n~n'),
@@ -295,11 +295,11 @@ document_handler(post, DB, Doc_ID, R) :-
     % check access rights
     verify_access(Auth,terminus/create_document,DB_URI),
 
-    try_db_graph(DB_URI, Graph),
+    try_make_db(DB_URI, DB_Obj),
     
     try_get_param('terminus:document',Request,Doc),
         
-    try_update_document(Doc_ID,Doc,Graph),
+    try_update_document(Doc_ID,Doc,DB_Obj),
 
     write_cors_headers(DB_URI),
     format('Content-type: application/json~n~n'),
@@ -315,11 +315,11 @@ document_handler(delete, DB, Doc_ID, Request) :-
     % check access rights
     verify_access(Auth,terminus/delete_document,DB_URI),
 
-    try_db_graph(DB_URI,Graph),
+    try_make_db(DB_URI,DB_Obj),
 
     try_doc_uri(DB_URI,Doc_ID,Doc_URI),
 
-    try_delete_document(Doc_URI,Graph),
+    try_delete_document(Doc_URI,DB_Obj),
 
     write_cors_headers(DB_URI),
     format('Content-type: application/json~n~n'),
@@ -346,11 +346,11 @@ class_frame_handler(get, DB, Request) :-
     % check access rights
     verify_access(Auth,terminus/class_frame,DB_URI),
 
-    try_db_graph(DB_URI,Graph),
+    try_make_db(DB_URI,DB),
 
     try_get_param('terminus:class',Request,Class_URI),
 
-    try_class_frame(Class_URI,Graph,Frame),
+    try_class_frame(Class_URI,DB,Frame),
     
     format('Content-type: application/json~n~n'),
     current_output(Out),
@@ -387,41 +387,41 @@ schema_handler(get,DB,Request) :-
 
 
 /* 
- * try_get_document(ID, Graph) is det.
+ * try_get_document(ID, DB) is det.
  * 
  * Actually has determinism: det + error
  * 
  * Gets document associated with ID
  */
-try_get_document(ID,Graph,Object) :-
-    (   entity_jsonld(ID,Graph,Object)
+try_get_document(ID,DB,Object) :-
+    (   entity_jsonld(ID,DB,Object)
     ->  true
     ;   format(atom(MSG), 'Document resource ~s can not be found', [ID]),
         throw(http_reply(not_found(ID,MSG)))).
 
 /* 
- * try_delete_document(ID, Graph) is det.
+ * try_delete_document(ID, DB) is det.
  * 
  * Actually has determinism: det + error
  * 
  * Deletes the object associated with ID, and throws an 
  * http error otherwise.
  */
-try_delete_document(Doc_ID, Graph) :-
-    (   delete_object(Doc_ID,Graph)
+try_delete_document(Doc_ID, DB) :-
+    (   delete_object(Doc_ID, DB)
     ->  true
     ;   format(atom(MSG), 'Document resource ~s could not be deleted', [Doc_ID]),
         throw(http_reply(not_found(Doc_ID,MSG)))).
 
 /* 
- * try_update_document(ID, Doc, Graph) is det.
+ * try_update_document(ID, Doc, DB) is det.
  * 
  * Actually has determinism: det + error
  * 
  * Updates the object associated with ID, and throws an 
  * http error otherwise.
  */
-try_update_document(Doc_ID, Doc_In, Graph) :-
+try_update_document(Doc_ID, Doc_In, DB) :-
     % if there is no id, we'll use the requested one.
     (   jsonld_id(Doc_In,Doc_ID_Match)
     ->  true
@@ -433,7 +433,7 @@ try_update_document(Doc_ID, Doc_In, Graph) :-
     ;   format(atom(MSG),'Unable to match object ids ~q and ~q', [Doc_ID, Doc_ID_Match]),
         throw(http_reply(not_found(Doc_ID,MSG)))),
         
-    (   update_object(Doc, Graph)    
+    (   update_object(Doc, DB)    
     ->  true
     ;   throw(http_reply(not_found(Doc_ID,'Unable to get object at Doc_ID')))).
 
@@ -454,18 +454,18 @@ try_db_uri(DB,DB_URI) :-
  * Die if we can't form a document uri. 
  */
 try_doc_uri(DB_URI,Doc_ID,Doc_URI) :- 
-    (   interpolate([DB_URI,'/',document, '/',Doc_ID],Doc_URI)
+    (   interpolate([DB_URI,'/',document,'/',Doc_ID],Doc_URI)
     ->  true
     ;   format(atom(MSG), 'Document resource ~s can not be constructed in ~s', [DB_URI,Doc_ID]),
         throw(http_reply(not_found(Doc_ID,MSG)))).
     
 /* 
- * try_db_graph(+DB:uri,-Graph:graph) is det. 
+ * try_make_db(+DB:uri,-DB:graph) is det. 
  * 
  * Die if we can't form a graph
  */
-try_db_graph(DB_URI,Graph) :-
-    (   make_collection_graph(DB_URI,Graph)
+try_make_db(DB_URI,DB) :-
+    (   make_database_from_database_name(DB_URI,DB)
     ->  true
     ;   format(atom(MSG), 'Resource ~s can not be found', [DB_URI]),
         throw(http_reply(not_found(DB_URI,MSG)))).
@@ -509,10 +509,10 @@ try_get_param(Key,Request,_Value) :-
     throw(http_reply(not_found(Key,MSG))).
     
 /* 
- * try_create_db(DB,DB_URI,Object) is det.
+ * try_create_db(DB_Name,DB_URI,Object) is det.
  * 
  */
-try_create_db(DB,DB_URI,Doc) :-
+try_create_db(DB_Name,DB_URI,Doc) :-
     with_mutex(
         DB_URI,
         (   (   create_db(DB_URI)
@@ -520,7 +520,7 @@ try_create_db(DB,DB_URI,Doc) :-
             ;   format(atom(MSG), 'Database ~s could not be created', [DB_URI]),
                 throw(http_reply(not_found(DB_URI,MSG)))),
             
-            (   add_database_resource(DB,DB_URI,Doc)
+            (   add_database_resource(DB_Name,DB_URI,Doc)
             ->  true
             ;   (   delete_db(DB_URI)
                 ->  format(atom(MSG), 'Database metadata could not be created: ~s', [DB_URI]),
@@ -573,10 +573,10 @@ add_payload_to_request(Request,[payload(Document)|Request]) :-
 add_payload_to_request(Request,Request).
 
 /* 
- * try_class_frame(Class,Graph,Frame) is det. 
+ * try_class_frame(Class,DB,Frame) is det. 
  */ 
-try_class_frame(Class,Graph,Frame) :-
-    (   class_frame_jsonld(Class,Graph,Frame)
+try_class_frame(Class,DB,Frame) :-
+    (   class_frame_jsonld(Class,DB,Frame)
     ->  true
     ;   format(atom(MSG), 'Class Frame could not be json-ld encoded for class ~s', [Class]),
         % Give a better error code etc. This is silly.

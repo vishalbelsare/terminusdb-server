@@ -39,25 +39,15 @@
  * Create a new empty graph
  */
 create_db(DB) :-
-
-    % create the collection if it doesn't exist
-    collection_directory(DB,DB_Path),
-    (   exists_directory(DB_Path)
-    ->  throw(http_reply(method_not_allowed('terminus:createdatabase')))
-    ;   true),
-    
-    ensure_directory(DB_Path),
-    interpolate([DB_Path,'/COLLECTION'],DB_File),
-    touch(DB_File),
     
     % create the graph if it doesn't exist
-    graph_directory(DB,main,Main_Path),
-    ensure_directory(Main_Path),
+    graph_directory(DB,document,Document_Path),
+    ensure_directory(Document_Path),
     
     graph_directory(DB,schema,Schema_Path),
     ensure_directory(Schema_Path),
     
-    make_checkpoint_directory(DB, main, Main_CPD),
+    make_checkpoint_directory(DB, document, Document_CPD),
     make_checkpoint_directory(DB, schema, Schema_CPD),
     
     % The version count is one indexed ;D
@@ -81,10 +71,10 @@ create_db(DB) :-
     ),
 
     % setup main graph
-    interpolate([Main_CPD,'/',N,'-ckp.ttl'],Main_TTLFile),
-    touch(Main_TTLFile),
-    interpolate([Main_CPD,'/',N,'-ckp.hdt'],Main_CKPFile),
-    ttl_to_hdt(Main_TTLFile,Main_CKPFile),    
+    interpolate([Document_CPD,'/',N,'-ckp.ttl'],Document_TTLFile),
+    touch(Document_TTLFile),
+    interpolate([Document_CPD,'/',N,'-ckp.hdt'],Document_CKPFile),
+    ttl_to_hdt(Document_TTLFile,Document_CKPFile),    
     
     sync_from_journals(DB,main),
     sync_from_journals(DB,schema).
