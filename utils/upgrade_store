@@ -108,21 +108,20 @@ number_from_ttl_file(TTL_File, Number) :-
     memberchk(NumberStr, Splitted),
     number_string(Number, NumberStr).
 
+process_graph_from_turtle(Graph, TTL) :-
+    file_base_name(TTL, TTLBaseName),
+    (  re_match("pos", TTLBaseName)
+    -> add_graph_from_turtle(Graph, TTL)
+    ;  remove_graph_from_turtle(Graph, TTL)).
+
 process_layer(Graph, LayerDir) :-
     format("Processing layer: ~s~n~n", [LayerDir]),
-    format(string(PositiveWildcard), "~s/*-pos*.ttl", [LayerDir]),
-    format(string(NegativeWildcard), "~s/*-neg*.ttl", [LayerDir]),
-    expand_file_name(PositiveWildcard, Positives),
-    expand_file_name(NegativeWildcard, Negatives),
-    map_list_to_pairs(number_from_ttl_file, Positives, PositivePairs),
-    map_list_to_pairs(number_from_ttl_file, Negatives, NegativePairs),
-    keysort(PositivePairs, PositivesSorted),
-    keysort(NegativePairs, NegativesSorted),
-    pairs_values(PositivesSorted, PosByNumber),
-    pairs_values(NegativesSorted, NegByNumber),
-
-    forall(member(NegativeTTL, NegByNumber), remove_graph_from_turtle(Graph, NegativeTTL)),
-    forall(member(PositiveTTL, PosByNumber), add_graph_from_turtle(Graph, PositiveTTL)).
+    format(string(PosNegWildcard), "~s/*-{neg,pos}*.ttl", [LayerDir]),
+    expand_file_name(PosNegWildcard, PosNegs),
+    map_list_to_pairs(number_from_ttl_file, PosNegs, Pairs),
+    keysort(Pairs, SortedPairs),
+    pairs_values(SortedPairs, PairValues),
+    forall(member(TTL, PairValues), process_graph_from_turtle(Graph, TTL)).
 
 process_graph(GraphDir) :-
     % TODO: This should make the resulting layers in order
