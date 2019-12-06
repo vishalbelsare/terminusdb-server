@@ -58,11 +58,8 @@ check_valid_dir(Directory) :-
  *
  * Reads in Turtle String and writes initial database.
  */
-add_graph_from_turtle(Graph_Obj, TTL_Path) :-
+add_graph_from_turtle(TTL_Path, Builder) :-
     format("Adding Turtle : ~s~n", [TTL_Path]),
-    open_directory_store("converted",Store),
-    open_write(Store, Builder),
-
     % write to a temporary builder.
     rdf_process_turtle(
         TTL_Path,
@@ -72,10 +69,7 @@ add_graph_from_turtle(Graph_Obj, TTL_Path) :-
                    (   normalise_triple(T, rdf(X,P,Y)),
                        object_storage(Y,S),
                        nb_add_triple(Builder, X, P, S)))),
-        []),
-    % commit this builder to a temporary layer to perform a diff.
-    nb_commit(Builder,Layer),
-    nb_set_head(Graph_Obj, Layer).
+        []).
 
 
 /**
@@ -83,10 +77,8 @@ add_graph_from_turtle(Graph_Obj, TTL_Path) :-
  *
  * Reads in Turtle String and writes initial database.
  */
-remove_graph_from_turtle(Graph_Obj, TTL_Path) :-
+remove_graph_from_turtle(TTL_Path, Builder) :-
     format("Removing Turtle : ~s~n", [TTL_Path]),
-    open_directory_store("converted",Store),
-    open_write(Store, Builder),
 
     % write to a temporary builder.
     rdf_process_turtle(
@@ -97,10 +89,8 @@ remove_graph_from_turtle(Graph_Obj, TTL_Path) :-
                    (   normalise_triple(T, rdf(X,P,Y)),
                        object_storage(Y,S),
                        nb_remove_triple(Builder, X, P, S)))),
-        []),
+        []).
     % commit this builder to a temporary layer to perform a diff.
-    nb_commit(Builder,Layer),
-    nb_set_head(Graph_Obj, Layer).
 
 number_from_ttl_file(TTL_File, Number) :-
     file_base_name(TTL_File, BaseFile),
@@ -109,10 +99,14 @@ number_from_ttl_file(TTL_File, Number) :-
     number_string(Number, NumberStr).
 
 process_graph_from_turtle(Graph, TTL) :-
+    open_directory_store("converted",Store),
+    open_write(Store, Builder),
     file_base_name(TTL, TTLBaseName),
     (  re_match("pos", TTLBaseName)
-    -> add_graph_from_turtle(Graph, TTL)
-    ;  remove_graph_from_turtle(Graph, TTL)).
+    -> add_graph_from_turtle(TTL, Builder)
+    ;  remove_graph_from_turtle(TTL, Builder)),
+    nb_commit(Builder,Layer),
+    nb_set_head(Graph, Layer).
 
 process_layer(Graph, LayerDir) :-
     format("Processing layer: ~s~n~n", [LayerDir]),
@@ -163,5 +157,4 @@ main(Args) :-
     (   check_valid_dir(Path)
     ->  true
     ;   format("Not a valid DB directory!~n"),
-        halt),
-    process_db_dir(Path).
+        halt).
