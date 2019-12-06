@@ -99,7 +99,7 @@ number_from_ttl_file(TTL_File, Number) :-
     number_string(Number, NumberStr).
 
 process_graph_from_turtle(Graph, TTL) :-
-    open_directory_store("converted",Store),
+    store(Store),
     open_write(Store, Builder),
     file_base_name(TTL, TTLBaseName),
     (  re_match("pos", TTLBaseName)
@@ -119,8 +119,8 @@ process_layer(Graph, LayerDir) :-
 
 process_graph(GraphDir) :-
     % TODO: This should make the resulting layers in order
-    open_directory_store("converted", Store),
     file_base_name(GraphDir, GraphName),
+    store(Store),
     create_named_graph(Store, GraphName, Graph),
     format(string(LayerWildcard), "~s/*", [GraphDir]),
     expand_file_name(LayerWildcard, Entries),
@@ -133,6 +133,8 @@ process_graphs(DirectoryList) :-
 
 process_db_dir(Directory) :-
     make_directory("converted"),
+    open_directory_store("converted", Store),
+    assertz(store(Store)),
     format(string(DirWildCard), "~s/http*/http*", [Directory]),
     expand_file_name(DirWildCard, Entries),
     process_graphs(Entries).
