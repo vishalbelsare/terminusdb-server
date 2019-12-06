@@ -98,35 +98,39 @@ number_from_ttl_file(TTL_File, Number) :-
     memberchk(NumberStr, Splitted),
     number_string(Number, NumberStr).
 
-process_graph_from_turtle(Graph, TTL) :-
+process_graph_from_turtle(GraphName, TTL) :-
     store(Store),
-    open_write(Store, Builder),
+    open_named_graph(Store, GraphName, Graph),
+    (   nb_current(GraphName, _)
+    ->  open_write(Graph, Builder)
+    ;   open_write(Store, Builder)),
     file_base_name(TTL, TTLBaseName),
     (  re_match("pos", TTLBaseName)
     -> add_graph_from_turtle(TTL, Builder)
     ;  remove_graph_from_turtle(TTL, Builder)),
     nb_commit(Builder,Layer),
-    nb_set_head(Graph, Layer).
+    nb_set_head(Graph, Layer),
+    nb_setval(GraphName, "added").
 
-process_layer(Graph, LayerDir) :-
+process_layer(GraphName, LayerDir) :-
     format("Processing layer: ~s~n~n", [LayerDir]),
     format(string(PosNegWildcard), "~s/*-{neg,pos}*.ttl", [LayerDir]),
     expand_file_name(PosNegWildcard, PosNegs),
     map_list_to_pairs(number_from_ttl_file, PosNegs, Pairs),
     keysort(Pairs, SortedPairs),
     pairs_values(SortedPairs, PairValues),
-    forall(member(TTL, PairValues), process_graph_from_turtle(Graph, TTL)).
+    forall(member(TTL, PairValues), process_graph_from_turtle(GraphName, TTL)).
 
 process_graph(GraphDir) :-
     % TODO: This should make the resulting layers in order
     file_base_name(GraphDir, GraphName),
     store(Store),
-    create_named_graph(Store, GraphName, Graph),
+    create_named_graph(Store, GraphName, _),
     format(string(LayerWildcard), "~s/*", [GraphDir]),
     expand_file_name(LayerWildcard, Entries),
     map_list_to_pairs(file_base_name, Entries, EntryPairs),
     keysort(EntryPairs, SortedLayers),
-    forall(member(_-LayerDir, SortedLayers), process_layer(Graph, LayerDir)).
+    forall(member(_-LayerDir, SortedLayers), process_layer(GraphName, LayerDir)).
 
 process_graphs(DirectoryList) :-
     forall(member(Dir, DirectoryList), process_graph(Dir)).
@@ -159,5 +163,5 @@ main(Args) :-
     (   check_valid_dir(Path)
     ->  true
     ;   format("Not a valid DB directory!~n"),
-        halt),
+        halt).
     process_db_dir(Path).
