@@ -171,7 +171,7 @@ instance_path(Dir,Path) :-
     atomic_list_concat([Dir,'/../tmp/instance.ttl'], Path).
 
 instance_name(Host,Name) :-
-    atomic_list_concat(['http://',Host,'/terminus/document'],Name).
+    atomic_list_concat([Host,'/terminus/document'],Name).
 
 config_path(Dir,Path) :-
     atomic_list_concat([Dir, '/../config/config.pl'], Path).
@@ -189,7 +189,7 @@ inference_path(Dir,Path) :-
     atomic_list_concat([Dir,'/../tmp/inference.ttl'], Path).
 
 inference_name(Host,Name) :-
-    atomic_list_concat(['http://',Host,'/terminus/inference'],Name).
+    atomic_list_concat([Host,'/terminus/inference'],Name).
 
 ttl_path(Dir, Path) :-
     atomic_list_concat([Dir,'1-ckp.ttl'], Path).
@@ -198,7 +198,7 @@ schema_path(Dir,Path) :-
     atomic_list_concat([Dir,'/../tmp/schema.ttl'], Path).
 
 schema_name(Host,Name) :-
-    atomic_list_concat(['http://',Host,'/terminus/schema'],Name).
+    atomic_list_concat([Host,'/terminus/schema'],Name).
 
 replace_in_file(Path, Pattern, With) :-
     read_file_to_string(Path, FileString, []),
