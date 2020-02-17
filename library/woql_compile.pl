@@ -612,8 +612,8 @@ expand(C,C) --> [], {atom(C)}.
 patch_binding(X,Y) :-
     (   var(X)
     ->  Y=unknown
-    ;   (   \+ \+ (X = literal(type(X,Y)),
-                   (var(X) ; var(Y)))
+    ;   (   \+ \+ (X = literal(type(A,B)),
+                   (var(A) ; var(B)))
         ->  Y = unknown
         ;   X = Y)
     ;   X=Y).
@@ -675,7 +675,9 @@ compile_relation(X:_C,XE,Class,Goals) -->
     }.
 
 as_vars([],[]).
-as_vars([_X as Y|Rest],[Y|Vars]) :-
+as_vars([as(_X,Y)|Rest],[Y|Vars]) :-
+    as_vars(Rest,Vars).
+as_vars([as(_X,Y,_T)|Rest],[Y|Vars]) :-
     as_vars(Rest,Vars).
 
 position_vars([],[]).
@@ -687,11 +689,16 @@ position_vars([v(V)|Rest],[v(V)|Vars]) :-
  * A fold over Spec into Result
  */
 indexing_as_list([],_,_,_,[]).
-indexing_as_list([N as v(V)|Rest],Header,Values,Bindings,[Term|Result]) :-
+indexing_as_list([As_Clause|Rest],Header,Values,Bindings,[Term|Result]) :-
+    (   As_Clause = as(N,v(V))
+    ->  Type = none
+    ;   As_Clause = as(N,v(V),Type)),
     member(V=Xe,Bindings),
     Term = (   nth1(Idx,Header,N)
            ->  (   nth1(Idx,Values,Value)
-               ->  Value = Xe
+               ->  (   Type = none
+                   ->  Value = Xe
+                   ;   typecast(Value,Type,[],Xe))
                ;   format(string(Msg),"Too few values in get: ~q with header: ~q and values: ~q giving index: ~q creating prolog: ~q",[N,Header,Values,Idx, nth1(Idx,Values,Value)]),
                    throw(error(syntax_error(Msg)))
                )
@@ -1159,7 +1166,6 @@ compile_wf((A => B),Goal) -->
     % should be easy to extract from B
     view(write_graph=[WG]),
     {
-        http_log_stream(Log),
         debug(terminus(woql_compile(compile_wf)), 'Database: ~q', [Database]),
         active_graphs(B,Active_Graphs),
         get_dict(schema,Database,Schemata),
@@ -1204,8 +1210,7 @@ compile_wf((A => B),Goal) -->
                                                           'terminus:witnesses' : Witnesses})))
                 )
             )
-        ),
-        * format(Log, '~n~nGoal: ~q~n', [Goal])
+        )
     },
     update(database=_,
            database=Database).
@@ -1443,6 +1448,17 @@ compile_wf(re(P,S,L),(literally(PE,PL),
     resolve(P,PE),
     resolve(S,SE),
     resolve(L,LE).
+compile_wf(split(S,P,L),(literally(SE,SL),
+                         literally(PE,PL),
+                         literal_list(LE,LL),
+                         utils:pattern_string_split(PL,SL,LL),
+                         unliterally(SL,SE),
+                         unliterally(PL,PE),
+                         unliterally_list(LL,LE)
+                        )) -->
+    resolve(S,SE),
+    resolve(P,PE),
+    resolve(L,LE).
 compile_wf(upper(S,A),(literally(SE,SL),string_upper(SL,AE))) -->
     resolve(S,SE),
     resolve(A,AE).
@@ -1467,7 +1483,7 @@ compile_wf(length(L,N),(length(LE,Num),
     resolve(L,LE),
     resolve(N,NE).
 compile_wf(member(X,Y),member(XE,YE)) -->
-    mapm(resolve,X,XE),
+    resolve(X,XE),
     resolve(Y,YE).
 compile_wf(join(X,S,Y),(literal_list(XE,XL),
                         literally(SE,SL),
@@ -1527,6 +1543,9 @@ file_spec_path_options(File_Spec,Files,Path,Default,New_Options) :-
     merge_options(Options,Default,New_Options),
     memberchk(Name_Atom=file(_Original,Path), Files).
 
+literal_list(X, _X) :-
+    var(X),
+    !.
 literal_list([],[]).
 literal_list([H|T],[HL|TL]) :-
     literally(H,HL),

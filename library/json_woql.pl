@@ -221,6 +221,15 @@ json_to_woql_ast(JSON,WOQL) :-
         json_to_woql_ast(N,WN),
         json_to_woql_ast(V,WV),
         WOQL = pad(WS,WC,WN,WV)
+    ;   _{'http://terminusdb.com/woql#split' : [ S, P, L ] } :< JSON
+    ->  json_to_woql_ast(S,WS),
+        json_to_woql_ast(P,WP),
+        json_to_woql_ast(L,WL),
+        WOQL = split(WS,WP,WL)
+    ;   _{'http://terminusdb.com/woql#member' : [ S, L ] } :< JSON
+    ->  json_to_woql_ast(S,WS),
+        json_to_woql_ast(L,WL),
+        WOQL = member(WS,WL)
     ;   _{'http://terminusdb.com/woql#concat' : [ List, Value ] } :< JSON
     ->  json_to_woql_ast(List,WList),
         json_to_woql_ast(Value,WValue),
@@ -282,6 +291,15 @@ json_to_woql_ast(JSON,WOQL) :-
         ->  atom_string(WA,WS),
             json_to_woql_ast(V,WV),
             WOQL = as(WA,WV)
+        ;   throw(http_reply(not_found(_{'@type' : 'vio:WOQLSyntaxError',
+                                         'terminus:message' :'No source column specified',
+                                         'vio:query' : JSON}))))
+    ;   _{'http://terminusdb.com/woql#as' : [ S, V, T ] } :< JSON
+    ->  (   _{'@value' : WS} :< S
+        ->  atom_string(WA,WS),
+            json_to_woql_ast(V,WV),
+            json_to_woql_ast(T,WT),
+            WOQL = as(WA,WV,WT)
         ;   throw(http_reply(not_found(_{'@type' : 'vio:WOQLSyntaxError',
                                          'terminus:message' :'No source column specified',
                                          'vio:query' : JSON}))))
