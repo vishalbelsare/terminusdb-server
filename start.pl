@@ -138,6 +138,30 @@ prolog:message(server_missing_config(BasePath)) -->
 :- use_module(library(http/http_log)).
 % Plugins
 %:- use_module(plugins(registry)).
+%
+
+
+cmd_line_options_spec([
+    [opt(interactor),
+         type(boolean),
+         default(true),
+         shortflags([i]),
+         longflags([interactor]),
+         help([   'Return to the Prolog interactor after start'
+                , 'false: wait for a hup signal then halt'
+                , 'true: return to the Prolog top level after starting'])],
+    [opt(test),
+         type(boolean),
+         default(false),
+         shortflags([t]),
+         longflags([test]),
+         help(['Run the integration tests' ])],
+    [opt(help),
+        type(boolean),
+        default(false),
+        longflags([help]),
+        help(['show this help message'])]
+]).
 
 :- on_signal(hup, _, hup).
 
@@ -149,6 +173,10 @@ main(Argv) :-
     format_time(string(StrTime), '%A, %b %d, %H:%M:%S %Z', Now),
     http_log('terminus-server started at ~w (utime ~w) args ~w~n',
              [StrTime, Now, Argv]),
+    cmd_line_options_spec(Spec),
+    catch(opt_parse(Spec, Argv, Options, _PosArgs),
+          _,
+          halt_bad_option),
     %maybe_upgrade,
     initialise_prefix_db,
     debug(terminus(main), 'prefix_db initialized', []),
@@ -156,11 +184,32 @@ main(Argv) :-
     debug(terminus(main), 'initialise_contexts completed', []),
     initialise_log_settings,
     debug(terminus(main), 'initialise_log_settings completed', []),
-    server(Argv),
-    run(Argv).
+    server(Options),
+    do_post_start_actions(Options).
 
-run([test]) :-
-  run_tests.
-run([serve]) :-
-  thread_get_message(stop).
-run(_).
+do_post_start_actions(Options) :-
+    member(help(true), Options),
+    !,
+    print_message(banner, help_banner),
+    halt(0).
+do_post_start_actions(Options) :-
+    (   member(test(true), Options)
+    ->  run_tests
+    ;   true
+    ),
+    (   member(interactor(false), Options)  % must be last
+    ->  thread_get_message(stop)
+    ;   true
+    ).
+
+halt_bad_option :-
+    print_message(banner, help_banner),
+    halt(0).
+
+:-multifile  prolog:message//1.
+
+prolog:message(help_banner) -->
+    {cmd_line_options_spec(Spec),
+    opt_help(Spec, Lines) },
+    [Lines].
+

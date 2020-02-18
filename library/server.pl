@@ -36,7 +36,7 @@
 :- use_module(triplestore).
 :- use_module(library(http/html_write)).
 
-server(_Argv) :-
+server(_Options) :-
     config:server(Server),
     config:server_port(Port),
     config:server_workers(Workers),
