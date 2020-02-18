@@ -175,8 +175,8 @@ main(Argv) :-
              [StrTime, Now, Argv]),
     cmd_line_options_spec(Spec),
     catch(opt_parse(Spec, Argv, Options, _PosArgs),
-          _,
-          halt_bad_option),
+          E,
+          halt_bad_option(Argv, E)),
     %maybe_upgrade,
     initialise_prefix_db,
     debug(terminus(main), 'prefix_db initialized', []),
@@ -202,9 +202,11 @@ do_post_start_actions(Options) :-
     ;   true
     ).
 
-halt_bad_option :-
-    print_message(banner, help_banner),
-    halt(0).
+halt_bad_option(Argv, Error) :-
+    print_message(error, invalid_cmd_option(Argv, Error)),
+% the opt_parse prints this (bad opt_parse!)
+%    print_message(banner, help_banner),
+    halt(1).
 
 :-multifile  prolog:message//1.
 
@@ -213,3 +215,11 @@ prolog:message(help_banner) -->
     opt_help(Spec, Lines) },
     [Lines].
 
+
+prolog:message(invalid_cmd_option(Argv,
+                                 error(domain_error(flag_value, Flag), _))) -->
+    [ 'Invalid Command Line Option, unknown flag ~w in args ~q'-[Flag, Argv],
+      nl].
+prolog:message(invalid_cmd_option(Argv, Error)) -->
+    [ 'Invalid Command Line Option ~q in args ~q'-[Error, Argv],
+      nl].
