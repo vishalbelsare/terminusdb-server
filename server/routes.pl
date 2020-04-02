@@ -865,6 +865,8 @@ test(update_object, [
               JSON1,
               [json_object(dict),authorization(basic(admin,Key))]),
 
+    json_write_dict(current_output,JSON1,[]),
+
     Expected = [
         _{'Object':_{'@type':"http://www.w3.org/2001/XMLSchema#string",
                      '@value':"Steve"},
