@@ -133,8 +133,16 @@
               gYearRange//2,
               integerRange//2,
               point//2,
-              url//0
+              url//0,
 
+              % dict_state.pl
+              update//3,
+              view//2,
+              put//2,
+              peek//1,
+              return//1,
+              run/3,
+              test//0
           ]).
 
 % note: test_utils is intentionally omitted
@@ -145,3 +153,4 @@
 :- use_module(util/utils).
 :- use_module(util/speculative_parse).
 :- use_module(util/xsd_parser).
+:- use_module(util/dict_state).
