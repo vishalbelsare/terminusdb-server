@@ -139,16 +139,13 @@ merge_output_bindings(B0, B1, Bindings) :-
  * Add Commit Info
  */
 empty_context(Context) :-
-    Context = query_context{
-        transaction_objects : [],
-        default_collection : empty,
+    Context = compile_context{
+        default_collection : none,
         filter : type_filter{ types : [instance] },
-        prefixes : _{},
-        write_graph : empty,
+        write_graph : none,
         bindings : [],
         selected : [],
-        files : [],
-        authorization : empty
+        files : []
     }.
 
 /*

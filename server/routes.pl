@@ -234,7 +234,7 @@ db_handler(post,Account,DB,R) :-
     open_descriptor(terminus_descriptor{}, Terminus_DB),
     /* POST: Create database */
     authenticate(Terminus_DB, Request, Auth),
-    config:public_url(Server),
+
     assert_auth_action_scope(Terminus_DB, Auth, terminus:create_database, "terminus"),
 
     get_payload(Database_Document,Request),
@@ -252,6 +252,7 @@ db_handler(post,Account,DB,R) :-
 
     try_create_db(DB_Name, Label, Comment, Prefixes),
 
+    config:public_url(Server),
     write_cors_headers(Server, Terminus_DB),
     reply_json(_{'terminus:status' : 'terminus:success'}).
 db_handler(delete,Account,DB,Request) :-
@@ -259,13 +260,12 @@ db_handler(delete,Account,DB,Request) :-
     open_descriptor(terminus_descriptor{}, Terminus_DB),
     authenticate(Terminus_DB, Request, Auth),
 
-    config:public_url(Server),
-
     user_database_name(Account, DB, DB_Name),
     assert_auth_action_scope(Terminus_DB, Auth, terminus:delete_database, DB_Name),
 
     try_delete_db(DB_Name),
 
+    config:public_url(Server),
     write_cors_headers(Server, Terminus_DB),
     reply_json(_{'terminus:status' : 'terminus:success'}).
 
