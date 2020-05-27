@@ -65,6 +65,7 @@
 :- use_module(library(yall)).
 :- use_module(library(apply_macros)).
 
+:- use_module(check_types).
 
 /*
  * Ctx is a context object which is used in WOQL queries to
@@ -85,15 +86,18 @@
  *
  * var_binding ---> var_binding{ woql_var : woql_var,
  *                               var_name : atom }
- * var_bindings = list(var_binding)
  *
- * query_context ---> query_context{ <default_output_graph : graph_descriptor>,
- *                                   <default_collection : collection_descriptor>,
- *                                   <prefixes : context>,
- *                                   transaction_objects : list(query_object),
- *                                   bindings : list(var_binding),
- *                                   selected : list(var_binding)
- *                                }
+ * resource_binding --> resource_set{ value : list(descriptor), woql_var : var }
+ *                    | resource{ value : descriptor, woql_var : var }
+ *
+ * compiler_context ---> compiler_context{ <write_graph : graph_descriptor>,
+ *                                         <default_collection : collection_descriptor>,
+ *                                         filter : graph_filter,
+ *                                         bindings : list(var_binding),
+ *                                         selected : list(var_binding),
+ *                                         resources : list(resource_binding),
+ *                                         files : list(file_descriptors)
+ *                                       }
  */
 
 /*
@@ -103,29 +107,30 @@
  *
  * we use S0 as the "merge in set"
  */
-merge(S0) -->
-    {
-        B0 = S0.get(bindings)
-    },
+merge_states(S0) -->
+    { B0 = (S0.get(bindings)),
+      R0 = (S0.get(resources)) },
 
     view(bindings,B1),
+    view(resources,R1),
 
-    {
-        merge_output_bindings(B0,B1,Bindings)
-    },
+    { merge_output_bindings(B0,B1,Bindings),
+      merge_resource_bindings(R0,R1,Resources) },
 
-    put(bindings,Bindings).
+    put(bindings,Bindings),
+    put(resources,Resources).
 
-unify_same_named_vars(_Var, []).
-unify_same_named_vars(Var, [Var1|Vars]) :-
+
+unify_same_named_vars([],_Var).
+unify_same_named_vars([Var1|Vars],Var) :-
     (   var_compare((=), Var, Var1)
     ->  Var = Var1
     ;   true),
-    unify_same_named_vars(Var,Vars).
+    unify_same_named_vars(Vars,Var).
 
 unify_output_bindings([], _).
 unify_output_bindings([Var|Vars], Bindings) :-
-    unify_same_named_vars(Var, Bindings),
+    unify_same_named_vars(Bindings,Var),
     unify_output_bindings(Vars, Bindings).
 
 merge_output_bindings(B0, B1, Bindings) :-
@@ -133,42 +138,20 @@ merge_output_bindings(B0, B1, Bindings) :-
     append(B0, B1, All),
     predsort(var_compare, All, Bindings).
 
-/**
- * empty_context(Context).
- *
- * Add Commit Info
- */
-empty_context(Context) :-
-    Context = compile_context{
-        default_collection : none,
-        filter : type_filter{ types : [instance] },
-        write_graph : none,
-        bindings : [],
-        selected : [],
-        files : []
-    }.
+unify_identical_resource([], _).
+unify_identical_resource([Resource|Resources], Resource1) :-
+    ignore(Resource = Resource1),
+    unify_identical_resource(Resources, Resource1).
 
-/*
- * prototype_empty_context(S0,S1) is det.
- *
- * updates a context, keeping only global info
- */
-empty_context -->
-    view(prefixes,Prefixes),
-    view(transaction_objects,Transaction_Objects),
-    view(files,Files),
+unify_resource_bindings([], _).
+unify_resource_bindings([Resource|Resources], Resources1) :-
+    unify_identical_resource(Resources1,Resource),
+    unify_resource_bindings(Resources,Resources1).
 
-    { empty_context(S0)
-    },
-    return(S0),
-
-    put(prefixes,Prefixes),
-    put(transaction_objects,Transaction_Objects),
-    put(files,Files).
-
-empty_context(Prefixes) -->
-    empty_context,
-    put(prefixes, Prefixes).
+merge_resource_bindings(B0, B1, Bindings) :-
+    unify_resource_bindings(B0, B1),
+    append(B0, B1, All),
+    predsort(compare, All, Bindings).
 
 /******************************
  * Binding management utilities
@@ -214,73 +197,54 @@ resolve_prefix(Pre,Suf,URI) -->
     ;   {atomic_list_concat([Full_Prefix,Suf],URI)}
     ).
 
-/*
- * resolve(ID,Resolution, S0, S1) is det.
- *
- * TODO: This needs a good going over. Way too much duplication of effort.
- */
-resolve(ignore,_Something) -->
-    !,
-    [].
-resolve(ID:Suf,U) -->
-    !,
-    resolve_prefix(ID,Suf,U).
-resolve(v(Var_Name),Var) -->
-    !,
-    lookup_or_extend(Var_Name,Var).
-resolve(X,XEx) -->
-    view(prefixes,Prefixes),
-    {
-        is_dict(X),
-        !,
-        expand(X,Prefixes,XEx)
+variable_resolve(Var_Name,Variable) -->
+    lookup_or_extend(Var_Name,Variable).
+
+type_resolve(v(Var_Name), Variable, true) -->
+    variable_resolve(Var_Name,Variable).
+type_resolve(type(Type), Result, Goal) -->
+    { Goal = basetype_subsumption_of(Type, Result) }.
+
+language_resolve(v(Var_Name),Variable) -->
+    variable_resolve(Var_Name,Variable).
+language_resolve(lang(String),String)  --> {true}.
+
+base_literal_resolve(v(Var_Name),Variable) -->
+    variable_resolve(Var_Name,Variable).
+base_literal_resolve(base(String),String) --> {true}.
+
+% NOTE: This is wrong. Resources need to be compiled to
+% a representation with a descriptor
+register_resource(Uri, Var) -->
+    update(resources,Old,New),
+    { (   memberchk(Uri=Var, Old)
+      ->  Old = New
+      ;   New = [Uri=Var|Old])
     }.
-resolve(X@L,XS@LE) -->
-    resolve(X,XE),
-    {
-        (   ground(XE),
-            atom(XE)
-        ->  atom_string(XE,XS)
-        ;   XE = XS),
-        !
-    },
-    resolve(L,LE).
-resolve(X^^T,Lit) -->
-    resolve(X,XE),
-    resolve(T,TE),
-    {
-        (   ground(XE)
-        ->  (   atom(XE)
-            ->  atom_string(XE,XS)
-            ;   XE=XS),
-            compile_representation(XS,TE,Lit)
-        ;   Lit = XE^^TE),
-        !
-    }.
-resolve(L,Le) -->
-    {
-        is_list(L),
-        !
-    },
-    mapm(resolve,L,Le).
-resolve(X,X) -->
-    {
-        string(X)
-    },
-    !.
-resolve(X,X) -->
-    {
-        atom(X)
-    },
-    !.
-resolve(X,X) -->
-    {
-        number(X)
-    },
-    !.
-resolve(X,X) -->
-    {
-        throw(error('How did we get here?', X))
+
+literal_resolve(X@L, XS@LE, true) -->
+    base_literal_resolve(X, XS),
+    language_resolve(L, LE).
+literal_resolve(X^^T, XE^^TE, Goal) -->
+    base_literal_resolve(X,XE),
+    type_resolve(T, TE, Goal).
+
+term_resolve(v(Var_Name), Variable, true) -->
+    variable_resolve(Var_Name, Variable).
+term_resolve(l(Literal), Variable, Goal) -->
+    literal_resolve(Literal,Variable,Goal).
+term_resolve(r(Uri), Var, true) -->
+    register_resource(Uri, Var).
+term_resolve(n(Uri), n(Uri), true) -->
+    { true }.
+
+
+resolve(Element-Term,Mode-Type,(Mode_Goal,Type_Goal,Term_Goal)-true) -->
+    term_resolve(Element,Term,Term_Goal),
+    { mode_check(Element,Mode,Term,Mode_Goal),
+      do_or_die(
+          type_check(Element,Type,Term,Type_Goal),
+          error(woql_type_error(Element,Term,Type)))
     }.
 
 
@@ -314,13 +278,6 @@ var_compare(Op, Left, Right) :-
     compare(Op, Left.var_name, Right.var_name).
 
 
-/*
- * compile_query(+Term:any,-Prog:any,-Ctx_Out:context) is det.
- */
-compile_query(Term, Prog, Ctx_Out) :-
-    empty_context(Ctx_In),
-    compile_query(Term,Prog,Ctx_In,Ctx_Out).
-
 compile_query(Term, Prog, Ctx_In, Ctx_Out) :-
     (   compile_wf(Term, Pre_Prog, Ctx_In, Ctx_Out),
         % Unsuspend all updates so they run at the end of the query
@@ -346,44 +303,11 @@ guess_varnames([X=Y|Rest],[X|Names]) :-
 guess_varnames([_|Rest],Names) :-
     guess_varnames(Rest,Names).
 
-report_instantiation_error(_Prog,context(Pred,Var),Ctx) :-
-    memberchk(bindings=B,Ctx),
-    get_varname(Var,B,Name),
-    !,
-    format(string(MSG), "The variable: ~q is unbound while being proceed in the AST operator ~q, but must be instantiated", [Name,Pred]),
-    throw(http_reply(method_not_allowed(_{'terminus:status' : 'terminus:failure',
-                                          'terminus:message' : MSG}))).
-report_instantiation_error(_Prog,context(Pred,_),Ctx) :-
-    memberchk(bindings=B,Ctx),
-    guess_varnames(B,Names),
-    format(string(MSG), "The variables: ~q are unbound, one of which was a problem while being proceed in the AST operator ~q, which but must be instantiated", [Names,Pred]),
-    throw(http_reply(method_not_allowed(_{'terminus:status' : 'terminus:failure',
-                                          'terminus:message' : MSG}))).
-
 literal_string(Val^^_, Val).
 literal_string(Val@_, Val).
 
-not_literal(X) :-
-    nonvar(X),
-    X = _V^^_T,
-    !,
-    false.
-not_literal(X) :-
-    nonvar(X),
-    X = _V@_T,
-    !,
-    false.
-not_literal(_).
-
-/* TODO: Needs fixed */
-patch_binding(X,Y) :-
-    (   var(X)
-    ->  Y=unknown
-    ;   (   \+ \+ (X = B^^A,
-                   (var(A) ; var(B)))
-        ->  Y = unknown
-        ;   X = Y)
-    ;   X=Y).
+% NOTE: Obviously this will not work
+patch_binding(X,X).
 
 patch_bindings([],[]).
 patch_bindings([V=X|B0],[V=Y|B1]) :-
@@ -495,25 +419,6 @@ woql_greater(AE,BE) :-
     compare((>),AE,BE).
 
 /*
- * term_literal(Value, Value_Cast) is det.
- *
- * Casts a bare object from prolog to a typed object
- */
-term_literal(Term, Term) :-
-    var(Term),
-    !.
-term_literal(Term,  String^^'http://www.w3.org/2001/XMLSchema#string') :-
-    atom(Term),
-    !,
-    atom_string(Term,String).
-term_literal(Term,  Term^^'http://www.w3.org/2001/XMLSchema#string') :-
-    string(Term),
-    !.
-term_literal(Term,  Term^^'http://www.w3.org/2001/XMLSchema#decimal') :-
-    number(Term).
-
-
-/*
  * csv_term(Path,Has_Header,Header,Indexing,Prog,Options) is det.
  *
  * Create a program term Prog for a csv with Header and column reference strategy
@@ -605,12 +510,91 @@ turtle_term(Path,Vars,Prog,Options) :-
             literals:normalise_triple(Triple, rdf(X,P,Y)),
             Vars = [X,P,Y]).
 
+
+
+/*
+ *
+ */
+
+compile_goal(p(Predicate),Goal) -->
+    compile_predicate(Predicate,Goal).
+compile_goal((Q1,Q2),(Goal1,Goal2)) -->
+    compile_goal(Q1,Goal1),
+    compile_goal(Q2,Goal2).
+compile_goal((Q1;Q2),(Goal1;Goal2)) -->
+    peek(S0),
+    compile_goal(Q1,Goal1),
+    peek(S1),
+    return(S0),
+    compile_goal(Q2,Goal2),
+    merge_states(S1).
+
+compile_predicate(Predicate, Goal) -->
+    { Predicate =.. [P|Args],
+      length(Args,N) },
+    compile_predicate_descriptor(P/N,Args,Goal).
+
+is_true(true).
+
+compile_predicate_descriptor(P/N,Args,Goal) -->
+    { query_term_properties(P/N,System_P/N,Modes,Types),
+      zip(Args,Resolved,Args_Resolved),
+      zip(Modes,Types,Modes_Types) },
+    mapm(resolve,Args_Resolved,Modes_Types,Pre_Goals_Post_Goals),
+    
+    { zip(Pre_Goals, Post_Goals, Pre_Goals_Post_Goals),
+      (   Resource
+      ->  lookup_resource(Resource_Var)
+      Predicate_Goal =.. [System_P|Resolved],
+      append([Pre_Goals,[Predicate_Goal],Post_Goals], Goal_List),
+      xfy_list(',',Goal, Goal_List) }.
+
+mode_check_var(ground,Var,Term,
+               (do_or_die(
+                    ground(Term),
+                    error(instantiation_error(Var,Term))))).
+mode_check_var(any,_,_,true).
+
+mode_check(v(Var),Type,Term,Goal) :-
+    mode_check_var(Type,Var,Term,Goal).
+mode_check(n(_),_,_,true).
+mode_check(l(_),_,_,true).
+mode_check(o(_),_,_,true).
+mode_check(r(_),_,_,true).
+
+type_check_node(node).
+type_check_node(obj).
+
+type_check_literal(literal).
+type_check_literal(obj).
+
+type_check(r(Term), resource, _, true) :-
+    % Must be atom at compile time.
+    do_or_die(
+        the(atom,Term),
+        error(woql_type_error(Term,resource))).
+type_check(v(_), Type, Term, will_be(Type,Term)).
+type_check(n(_), Type, _, true) :-
+    type_check_node(Type).
+type_check(l(_), Type, _, true) :-
+    type_check_literal(Type).
+
+
+query_term_properties(t/3,t//3,[any,any,any],[node,node,obj]).
+query_term_properties(t/4,t//4,[any,any,any,ground],[node,node,obj,resource]).
+query_term_properties(insert/3,insert//3,[any,any,any],[node,node,obj]).
+query_term_properties(insert/4,insert//4,[any,any,any,ground],[node,node,obj,resource]).
+query_term_properties(read_object/3,read_object//3,[node,number,dict]).
+
+/*
 compile_wf(read_object(Doc_ID,N,Doc),
            frame:document_jsonld(S0,URI,N,JSON)) -->
     assert_read_access,
     resolve(Doc_ID,URI),
     resolve(Doc,JSON),
-    peek(S0).
+    peek(S0). */
+query_term_properties(read_object/2,read_object/2,[node,dict]).
+/*
 compile_wf(read_object(Doc_ID,Doc), frame:document_jsonld(S0,URI,JSON)) -->
     assert_read_access,
     resolve(Doc_ID,URI),
@@ -1151,7 +1135,7 @@ compile_wf(Q,_) -->
         throw(error(syntax_error(M),
                     context(compile_wf//1,Q)))
     }.
-
+*/
 debug_wf(Lit) -->
     { debug(terminus(woql_compile(compile_wf)), '~w', [Lit]) },
     [].
@@ -1159,24 +1143,6 @@ debug_wf(Lit) -->
 debug_wf(Fmt, Args) -->
     { debug(terminus(woql_compile(compile_wf)), Fmt, Args) },
     [].
-
-%%
-% update_descriptor_transaction(Descriptor, Context1, Context2) is det.
-%
-% Open a new descriptor and put it on the transaction pile
-% making sure not to screw up the uniqueness of each object.
-update_descriptor_transactions(Descriptor)
--->
-    update(transaction_objects, Transaction_Objects, New_Transaction_Objects),
-    peek(Context),
-    {   (   get_dict(commit_info, Context, Commit_Info)
-        ->  true
-        ;   Commit_Info = _{}),
-        transactions_to_map(Transaction_Objects, Map),
-        open_descriptor(Descriptor, Commit_Info, Transaction_Object, Map, _Map),
-        union([Transaction_Object], Transaction_Objects, New_Transaction_Objects)
-    }.
-
 
 /*
  * file_spec_path_options(File_Spec,Path,Default, Options) is semidet.
@@ -1202,114 +1168,6 @@ file_spec_path_options(File_Spec,Files,Path,Default,New_Options) :-
     merge_options(Options,Default,New_Options),
     memberchk(Name_Atom=file(_Original,Path), Files).
 
-
-%%
-% marshall_args(M_Pred, Trans) is det.
-%
-% NOTE: The marshalling of args creates a situation in which incorrect modes
-% of underlying predicates report the wrong value.
-%
-% Better is if we had a registration system, which took allowed modes and types.
-%
-marshall_args(M_Pred,Goal) :-
-    strip_module(M_Pred, M, Pred),
-    Pred =.. [Func|ArgsE],
-    length(ArgsE,N),
-    length(ArgsL,N),
-    maplist([AE,AL,literally(AE,AL)]>>true, ArgsE, ArgsL, Pre),
-    maplist([AE,AL,unliterally(AL,AE)]>>true, ArgsE, ArgsL, Post),
-    Lit_Pred =.. [Func|ArgsL],
-    append([Pre,[M:Lit_Pred],Post], Term_List),
-    xfy_list(',',Goal,Term_List).
-
-literally(X, _X) :-
-    var(X),
-    !.
-literally(X^^_T, X) :-
-    !.
-literally(X@_L, X) :-
-    !.
-literally([],[]).
-literally([H|T],[HL|TL]) :-
-    literally(H,HL),
-    literally(T,TL).
-literally(X, X) :-
-    (   atom(X)
-    ->  true
-    ;   string(X)
-    ->  true
-    ;   number(X)
-    ->  true
-    ;   is_dict(X)
-    ).
-
-unliterally(X,Y) :-
-    string(X),
-    !,
-    (   Y = X^^Type,
-        (   var(Type)
-        ->  Type = 'http://www.w3.org/2001/XMLSchema#string'
-        ;   % subsumption test here.
-            true)
-    ->  true
-    ;   Y = X@Lang,
-        (   var(Lang)
-        ->  Lang = en
-        ;   true)
-    ).
-unliterally(X,Y) :-
-    atom(X),
-    atom(Y),
-    !,
-    X = Y.
-unliterally(X,Y) :-
-    number(X),
-    !,
-    (   Y = X^^Type,
-        (   var(Type)
-        ->  Type = 'http://www.w3.org/2001/XMLSchema#decimal'
-        ;   % subsumption test here.
-            true)
-    ->  true
-    ;   Y = X@Lang,
-        (   var(Lang)
-        ->  Lang = en
-        ;   true)
-    ).
-unliterally(X,Y) :-
-    is_dict(X),
-    !,
-    X = Y.
-unliterally([],[]).
-unliterally([H|T],[HL|TL]) :-
-    unliterally(H,HL),
-    unliterally(T,TL).
-
-compile_arith(Exp,Pre_Term,ExpE) -->
-    {
-        Exp =.. [Functor|Args],
-        % lazily snarf everything named...
-        % probably need to add stuff here.
-        member(Functor, ['*','-','+','div','/','floor', '**'])
-    },
-    !,
-    mapm(compile_arith,Args,Pre_Terms,ArgsE),
-    {
-        ExpE =.. [Functor|ArgsE],
-        list_conjunction(Pre_Terms,Pre_Term)
-    }.
-compile_arith(Exp,literally(ExpE,ExpL),ExpL) -->
-    resolve(Exp,ExpE).
-
-restrict(VL) -->
-    update(bindings,B0,B1),
-    {
-        include({VL}/[Record]>>(
-                    get_dict(var_name, Record, Name),
-                    member(v(Name),VL)
-                ), B0, B1)
-    }.
-
 % Could be a single fold, but then we always get a conjunction with true
 list_conjunction([],true).
 list_conjunction(L,Goal) :-
@@ -1325,101 +1183,17 @@ list_disjunction(L,Goal) :-
     R = [A|Rest],
     foldl([X,Y,(X;Y)]>>true, Rest, A, Goal).
 
+:- begin_tests(woql_compile).
 
-ensure_filter_resolves_to_graph_descriptor(G, Collection_Descriptor, Graph_Descriptor) :-
-    resolve_filter(G,Filter),
-    collection_descriptor_graph_filter_graph_descriptor(Collection_Descriptor,
-                                                        Filter,
-                                                        Graph_Descriptor),
-    !.
-ensure_filter_resolves_to_graph_descriptor(G, _Collection_Descriptor, _Graph_Descriptor) :-
-    format(atom(M), 'You must resolve to a single graph to insert. Graph Descriptor: ~q', G),
-    throw(error(syntax_error(M), _)).
+test(basic_triple,[]) :-
+    Term = (
+        t(n(a),n(b),n(c)
+    ),
+    true.
 
-/* NOTE: Should this go in resolve_query_resource.pl? */
-filter_transaction_object_read_write_objects(type_filter{ types : Types}, Transaction_Object, Read_Write_Objects) :-
-    (   memberchk(instance,Types)
-    ->  Instance_Objects = Transaction_Object.instance_objects
-    ;   Instance_Objects = []),
-    (   memberchk(schema,Types)
-    ->  Schema_Objects = Transaction_Object.schema_objects
-    ;   Schema_Objects = []),
-    (   memberchk(inference,Types)
-    ->  Inference_Objects = Transaction_Object.inference_objects
-    ;   Inference_Objects = []),
-    append([Instance_Objects,Schema_Objects,Inference_Objects],Read_Write_Objects).
-filter_transaction_object_read_write_objects(type_name_filter{ type : Type, names : Names}, Transaction_Object, Read_Write_Objects) :-
-    (   Type = instance
-    ->  Objs = Transaction_Object.instance_objects
-    ;   Type = schema
-    ->  Objs = Transaction_Object.schema_objects
-    ;   Type = inference
-    ->  Objs = Transaction_Object.inference_objects),
-    include({Names}/[Obj]>>(
-                get_dict(descriptor, Obj, Desc),
-                get_dict(name, Desc, Name),
-                memberchk(Name,Names)
-            ), Objs, Read_Write_Objects).
+:- end_tests(woql_compile).
 
-filter_transaction_object_goal(type_filter{ types : Types }, Transaction_Object, t(XE, PE, YE), Goal) :-
-    (   memberchk(instance,Types)
-    ->  Search_1 = [inference:inferredEdge(XE,PE,YE,Transaction_Object)]
-    ;   Search_1 = []),
-    (   memberchk(schema,Types)
-    ->  Search_2 = [xrdf(Transaction_Object.schema_objects, XE, PE, YE)]
-    ;   Search_2 = []),
-    (   memberchk(inference,Types)
-    ->  Search_3 = [xrdf(Transaction_Object.inference_objects, XE, PE, YE)]
-    ;   Search_3 = []),
-    append([Search_1,Search_2,Search_3], Searches),
-    list_disjunction(Searches,Goal).
-filter_transaction_object_goal(type_name_filter{ type : instance , names : Names}, Transaction_Object, t(XE, PE, YE), Goal) :-
-    filter_read_write_objects(Transaction_Object.instance_objects, Names, Objects),
-    Inference_Object = Transaction_Object.put(instance_objects, Objects),
-    Goal = inference:inferredEdge(XE,PE,YE,Inference_Object).
-filter_transaction_object_goal(type_name_filter{ type : schema , names : Names}, Transaction_Object, t(XE, PE, YE), Goal) :-
-    filter_read_write_objects(Transaction_Object.schema_objects, Names, Objects),
-    Goal = xrdf(Objects, XE, PE, YE).
-filter_transaction_object_goal(type_name_filter{ type : inference , names : Names}, Transaction_Object, t(XE, PE, YE), Goal) :-
-    filter_read_write_objects(Transaction_Object.inference_objects, Names, Objects),
-    Goal = xrdf(Objects, XE, PE, YE).
-
-filter_transaction_graph_descriptor(type_name_filter{ type : Type, names : [Name]},Transaction,Graph_Descriptor) :-
-    (   Type = instance
-    ->  Objects = Transaction.instance_objects
-    ;   Type = schema
-    ->  Objects = Transaction.schema_objects
-    ;   Type = inference
-    ->  Objects = Transaction.inference_objects),
-    find({Name}/[Obj]>>read_write_object_to_name(Obj,Name), Objects, Found),
-    Graph_Descriptor = Found.get(descriptor).
-
-filter_transaction(type_filter{ types : _Types }, Transaction, Transaction).
-filter_transaction(type_name_filter{ type : instance, names : Names}, Transaction, New_Transaction) :-
-    filter_read_write_objects(Transaction.instance_objects, Names, Objects),
-    New_Transaction = transaction_object{
-                          parent : Transaction.parent,
-                          instance_objects : Objects,
-                          inference_objects : Transaction.inference_objects,
-                          schema_objects : Transaction.schema_objects
-                      }.
-filter_transaction(type_name_filter{ type : schema, names : Names}, Transaction, New_Transaction) :-
-    filter_read_write_objects(Transaction.schema_objects, Names, Objects),
-    New_Transaction = transaction_object{
-                          parent : Transaction.parent,
-                          instance_objects : [],
-                          inference_objects : [],
-                          schema_objects : Objects
-                      }.
-filter_transaction(type_name_filter{ type : inference, names : Names}, Transaction, New_Transaction) :-
-    filter_read_write_objects(Transaction.inference_objects, Names, Objects),
-    New_Transaction = transaction_object{
-                          parent : Transaction.parent,
-                          instance_objects : [],
-                          inference_objects : Objects,
-                          schema_objects : []
-                      }.
-
+/*
 :- begin_tests(woql).
 
 % At some point this should be exhaustive. Currently we add as we find bugs.
@@ -1802,32 +1576,6 @@ test(indexed_get, [])
     % Should this really be without a header?
     _{'First':_{'@type':'http://www.w3.org/2001/XMLSchema#string','@value':"Duration"},
       'Second':_{'@type':'http://www.w3.org/2001/XMLSchema#string','@value':"Start date"}} :< Res.
-
-/*
-{
-  "@type": "woql:Get",
-  "woql:as_vars": [
-    {
-      "@type": "woql:IndexedAsVar",
-      "woql:index": {
-        "@type": "xsd:nonNegativeInteger",
-        "@value": 0
-      },
-      "woql:variable_name": {
-        "@type": "xsd:string",
-        "@value": "VarName"
-      }
-    }
-  ],
-  "woql:query_resource": {
-    "@type": "woql:RemoteResource",
-    "woql:remote_uri": {
-      "@type": "xsd:anyURI",
-      "@value": "https://terminusdb.com/t/data/bikeshare/2011-capitalbikeshare-tripdata.csv"
-    }
-  }
-}
-*/
 
 test(named_get, [])
 :-
@@ -2847,3 +2595,4 @@ test(ast_when_test, [
     Triples = [t(a,b,c),t(a,b,d),t(a,b,e),t(e,f,c),t(e,f,d),t(e,f,e)].
 
 :- end_tests(woql).
+*/
