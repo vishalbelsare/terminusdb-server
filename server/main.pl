@@ -36,6 +36,7 @@
 % http server
 :- use_module(library(http/thread_httpd)).
 :- use_module(library(http/http_dispatch)).
+:- use_module(library(http/http_ssl_plugin)).
 :- use_module(library(http/html_write)).
 
 
@@ -58,7 +59,9 @@ terminus_server(_Argv) :-
     config:worker_amount(Workers),
     config:http_options(HTTPOptions),
     http_server(http_dispatch,
-		        [ port(Port),
+		[ port(Port),
+		        ssl([ certificate_file('localhost.crt'),
+		              key_file('localhost.key')]),
 		          workers(Workers)
 		          | HTTPOptions
 		        ]),
