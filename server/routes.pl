@@ -243,10 +243,11 @@ db_handler(post,Account,DB,R) :-
             label : Label } :< Database_Document),
         error(bad_api_document(Database_Document))),
 
-    do_or_die(
-        (_{ prefixes : Prefixes } :< Database_Document,
-         _{ doc : _Doc, scm : _Scm} :< Prefixes),
-        error(under_specified_prefixes(Database_Document))),
+    (   get_dict(prefixes, Database_Document, Prefixes)
+    <>  Prefixes = _{}),
+
+    resolve_absolute_descriptor([Account, DB], Descriptor),
+    collection_descriptor_prefixes(Descriptor, Prefixes),
 
     user_database_name(Account, DB, DB_Name),
 
@@ -268,6 +269,16 @@ db_handler(delete,Account,DB,Request) :-
     config:public_url(Server),
     write_cors_headers(Server, Terminus_DB),
     reply_json(_{'terminus:status' : 'terminus:success'}).
+
+database_default_prefixes(Account, DB, Doc, Prefixes) :-
+    (   get_dict(prefixes, Database_Document)
+    ->  (   get_dict(doc, Prefixes, Document_Prefix)
+        ->  true
+        ;   atomic_list_concat(['terminus:///', Document_Prefix = 
+    do_or_die(
+        (_{ prefixes : Prefixes } :< Database_Document,
+         _{ doc : _Doc, scm : _Scm} :< Prefixes),
+        error(under_specified_prefixes(Database_Document))),
 
 
 :- begin_tests(db_endpoint).

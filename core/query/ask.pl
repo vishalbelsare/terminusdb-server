@@ -85,7 +85,8 @@ pre_term_to_term_and_bindings(Ctx,Pre_Term,Term,Bindings_In,Bindings_Out) :-
 collection_descriptor_prefixes_(Descriptor, Prefixes) :-
     terminus_descriptor{} :< Descriptor,
     !,
-    Prefixes = _{doc: 'terminus:///terminus/document/'}.
+    Prefixes = _{doc: 'terminus:///terminus/data/',
+                 scm: 'http://terminusdb.com/schema/terminus#'}.
 collection_descriptor_prefixes_(Descriptor, Prefixes) :-
     id_descriptor{} :< Descriptor,
     !,
@@ -93,15 +94,20 @@ collection_descriptor_prefixes_(Descriptor, Prefixes) :-
 collection_descriptor_prefixes_(Descriptor, Prefixes) :-
     label_descriptor{label: Label} :< Descriptor,
     !,
-    atomic_list_concat(['terminus:///',Label,'/document/'], Doc_Prefix),
-    Prefixes = _{doc: Doc_Prefix}.
+    atomic_list_concat(['terminus:///', Label, '/data/'], Doc_Prefix),
+    atomic_list_concat(['terminus:///', Label, '/schema#'], Schema_Prefix),
+    Prefixes = _{doc: Doc_Prefix,
+                 scm: Schema_Prefix}.
 collection_descriptor_prefixes_(Descriptor, Prefixes) :-
     database_descriptor{
         database_name: Name
     } :< Descriptor,
     !,
-    atomic_list_concat(['terminus:///',Name,'/document/'], Doc_Prefix),
-    Prefixes = _{doc: Doc_Prefix}.
+    user_database_name(User, DB, Name),
+    atomic_list_concat(['terminus:///', User, '/', DB,'/data/'], Doc_Prefix),
+    atomic_list_concat(['terminus:///', User, '/', DB,'/schema#'], Schema_Prefix),
+    Prefixes = _{doc: Doc_Prefix,
+                 scm: Schema_Prefix}.
 collection_descriptor_prefixes_(Descriptor, Prefixes) :-
     repository_descriptor{
         database_descriptor: Database_Descriptor
@@ -110,8 +116,11 @@ collection_descriptor_prefixes_(Descriptor, Prefixes) :-
     database_descriptor{
         database_name: Database_Name
     } :< Database_Descriptor,
-    atomic_list_concat(['terminus:///', Database_Name, '/commits/document/'], Commit_Document_Prefix),
-    Prefixes = _{doc : Commit_Document_Prefix}.
+    user_database_name(User, DB, Database_Name),
+    atomic_list_concat(['terminus:///commits/data/'], Commit_Document_Prefix),
+    atomic_list_concat(['terminus:///commits/schema#'], Schema_Prefix),
+    Prefixes = _{doc : Commit_Document_Prefix,
+                 scm : Schema_Prefix}.
 collection_descriptor_prefixes_(Descriptor, Prefixes) :-
     % Note: possible race condition.
     % We're querying the ref graph to find the branch base uri. it may have changed by the time we actually open the transaction.
