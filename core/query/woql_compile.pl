@@ -100,6 +100,22 @@
  *                                       }
  */
 
+
+/*
+ * WOQL AST's are built from the following grammar:
+ *
+ * Variable := Atom
+ * Resource := r(Resource)
+ * Lang := Atom
+ * Type := Atom
+ * Literal := Atom^^Type | String@Lang
+ * Object := n(Node) | l(Literal)
+ * Term := n(Node) | o(Object) | r(Resource) | l(Literal) | v(Variable)
+ *       | [Term_1,...Term_n] | true
+ */
+
+
+
 /*
  * merge(S0,S1,SM) is det.
  *
@@ -541,7 +557,7 @@ compile_predicate_descriptor(P/N,Args,Goal) -->
       zip(Args,Resolved,Args_Resolved),
       zip(Modes,Types,Modes_Types) },
     mapm(resolve,Args_Resolved,Modes_Types,Pre_Goals_Post_Goals),
-    
+
     { zip(Pre_Goals, Post_Goals, Pre_Goals_Post_Goals),
       (   Resource
       ->  lookup_resource(Resource_Var)

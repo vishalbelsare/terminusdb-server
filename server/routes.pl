@@ -1227,7 +1227,7 @@ authorized_fetch(Authorization, URL, Repository_Head_Option, Payload_Option) :-
                  prefix,
                  methods([options,post])]).
 
-
+% NOTE: No Message! And no strategies
 rebase_handler(options, _Path, _Request) :-
     config:server(SURI),
     open_descriptor(terminus_descriptor{}, Terminus),
@@ -1253,7 +1253,7 @@ rebase_handler(post, Path, R) :-
     ->  true
     ;   throw(error(rebase_author_missing))),
 
-    Strategy_Map = [],
+    Strategy_Map =  [],
     rebase_on_branch(Our_Descriptor,Their_Descriptor, Author, Auth_ID, Strategy_Map, Common_Commit_ID_Option, Forwarded_Commits, Reports),
 
     Incomplete_Reply = _{ 'terminus:status' : "terminus:success",
@@ -1263,7 +1263,8 @@ rebase_handler(post, Path, R) :-
     (   Common_Commit_ID_Option = some(Common_Commit_ID)
     ->  Reply = (Incomplete_Reply.put(common_commit_id, Common_Commit_ID))
     ;   Reply = Incomplete_Reply),
-    
+
+    write_descriptor_cors(Our_Descriptor, terminus_descriptor{}),
     reply_json_dict(Reply).
 
 :- begin_tests(rebase_endpoint).
@@ -1610,7 +1611,8 @@ push_handler(post,Path,R) :-
     ->  write_descriptor_cors(Branch_Descriptor, terminus_descriptor{}),
         reply_json(_{'terminus:status' : "terminus:success"})
     ;   Result = some(Head_ID)
-    ->  reply_json(_{'terminus:status' : "terminus:success",
+    ->  write_descriptor_cors(Branch_Descriptor, terminus_descriptor{}),
+        reply_json(_{'terminus:status' : "terminus:success",
                      'head' : Head_ID})
     ;   throw(error(internal_server_error))).
 

@@ -138,11 +138,10 @@
               % dict_state.pl
               update//3,
               view//2,
+              swap//3,
               put//2,
               peek//1,
-              return//1,
-              run/3,
-              test//0
+              return//1
           ]).
 
 % note: test_utils is intentionally omitted
