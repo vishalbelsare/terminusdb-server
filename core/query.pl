@@ -4,6 +4,7 @@
               ask_ast/3,
               create_context/2,
               create_context/3,
+              context_to_parent_transaction/2,
               collection_descriptor_prefixes/2,
               context_extend_prefixes/3,
               context_default_prefixes/2,
@@ -74,6 +75,7 @@
               run_context_ast_jsonld_response/3,
 
               % resolve_query_resource.pl
+              resolve_string_descriptor/3,
               resolve_absolute_descriptor/2,
               resolve_relative_descriptor/3,
               resolve_absolute_string_descriptor/2,

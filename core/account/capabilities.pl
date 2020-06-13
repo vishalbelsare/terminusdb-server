@@ -16,7 +16,8 @@
               write_cors_headers/2,
               authorisation_object/3,
               user_object/3,
-              super_user_authority/1
+              super_user_authority/1,
+              check_descriptor_auth/4
           ]).
 
 /** <module> Capabilities
@@ -394,6 +395,23 @@ user_object(DB, User_ID, User_Obj) :-
             )).
 
 
+check_descriptor_auth_(terminus_descriptor{},Action,Auth,Terminus) :-
+    assert_auth_action_scope(Terminus,Auth,Action,"terminus").
+check_descriptor_auth_(database_descriptor{ database_name : Name }, Action, Auth, Terminus) :-
+    assert_auth_action_scope(Terminus,Auth,Action,Name).
+check_descriptor_auth_(repository_descriptor{ database_descriptor : DB,
+                                                      repository_name : _ }, Action, Auth, Terminus) :-
+    check_descriptor_auth_(DB, Action, Auth, Terminus).
+check_descriptor_auth_(branch_descriptor{ repository_descriptor : Repo,
+                                         branch_name : _ }, Action, Auth, Terminus) :-
+    check_descriptor_auth_(Repo, Action, Auth, Terminus).
+check_descriptor_auth_(commit_descriptor{ repository_descriptor : Repo,
+                                                  commit_id : _ }, Action, Auth, Terminus) :-
+    check_descriptor_auth_(Repo, Action, Auth, Terminus).
+
+check_descriptor_auth(Terminus, Descriptor, Action, Auth) :-
+    check_descriptor_auth_(Descriptor, Action, Auth, Terminus).
+
 /*
  * write_cors_headers(Resource_Name) is det.
  *
@@ -412,7 +430,7 @@ write_cors_headers(Resource_Name, DB) :-
     format(Out,'Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\n',[]),
     format(Out,'Access-Control-Allow-Credentials: true\n',[]),
     format(Out,'Access-Control-Max-Age: 1728000\n',[]),
-    format(Out,'Access-Control-Allow-Headers: Authorization, Accept, Accept-Encoding, Accept-Language, Host, Origin, Referer, Content-Type, Content-Length, Content-Range, Content-Disposition, Content-Description\n',[]),
+    format(Out,'Access-Control-Allow-Headers: Authorization, Authorization-Remote, Accept, Accept-Encoding, Accept-Language, Host, Origin, Referer, Content-Type, Content-Length, Content-Range, Content-Disposition, Content-Description\n',[]),
     format(Out,'Access-Control-Allow-Origin: ',[]),
     write_domains(Unique_Origins, Out),
     format(Out,'\n',[]).

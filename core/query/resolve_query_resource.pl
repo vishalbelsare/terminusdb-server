@@ -1,4 +1,5 @@
 :- module(resolve_query_resource,[
+              resolve_string_descriptor/3,
               resolve_absolute_descriptor/2,
               resolve_relative_descriptor//2,
               resolve_relative_descriptor/3,
@@ -18,6 +19,13 @@
 :- use_module(core(triple)).
 
 :- use_module(library(pcre)).
+
+resolve_string_descriptor(Default_Descriptor, String, Descriptor) :-
+    (   resolve_relative_string_descriptor(Default_Descriptor,
+                                           String,
+                                           Descriptor)
+    ->  true
+    ;   resolve_absolute_string_descriptor(String, Descriptor)).
 
 resolve_absolute_descriptor(["terminus"], terminus_descriptor{}) :- !.
 resolve_absolute_descriptor([terminus], terminus_descriptor{}) :- !.
@@ -112,7 +120,7 @@ resolve_absolute_descriptor([User, Database, Repository], Descriptor) :-
 :- begin_tests(resolve_absolute_string).
 test(user_db) :-
     Address = ["a_user", "a_database"],
-    
+
     resolve_absolute_descriptor(Address, Descriptor),
 
     Descriptor = branch_descriptor{
@@ -129,7 +137,7 @@ test(user_db) :-
 
 test(user_db_repo) :-
     Address = ["a_user", "a_database", "a_remote"],
-    
+
     resolve_absolute_descriptor(Address, Descriptor),
 
     Descriptor = branch_descriptor{
@@ -145,7 +153,7 @@ test(user_db_repo) :-
                           }.
 test(user_db_repo_branch) :-
     Address = ["a_user", "a_database", "a_remote", "branch", "a_branch"],
-    
+
     resolve_absolute_descriptor(Address, Descriptor),
 
     Descriptor = branch_descriptor{
@@ -184,7 +192,7 @@ test(user_db_meta) :-
 :- begin_tests(resolve_absolute_atom).
 test(user_db) :-
     Address = [a_user, a_database],
-    
+
     resolve_absolute_descriptor(Address, Descriptor),
 
     Descriptor = branch_descriptor{
@@ -201,7 +209,7 @@ test(user_db) :-
 
 test(user_db_repo) :-
     Address = [a_user, a_database, a_remote],
-    
+
     resolve_absolute_descriptor(Address, Descriptor),
 
     Descriptor = branch_descriptor{
@@ -217,7 +225,7 @@ test(user_db_repo) :-
                           }.
 test(user_db_repo_branch) :-
     Address = [a_user, a_database, a_remote, branch, a_branch],
-    
+
     resolve_absolute_descriptor(Address, Descriptor),
 
     Descriptor = branch_descriptor{

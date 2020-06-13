@@ -22,10 +22,13 @@
               insert_commit_object_on_branch/6,
               unlink_commit_object_from_branch/2,
               link_commit_object_to_branch/3,
+              reset_branch_head/3,
               insert_graph_object/7,
               copy_commits/3,
-              apply_commit/7,
-              apply_commit/8,
+              apply_commit_on_branch/7,
+              apply_commit_on_branch/8,
+              apply_commit_on_commit/7,
+              apply_commit_on_commit/8,
               commit_is_valid/2,
               invalidate_commit/2,
               most_recent_common_ancestor/7,
@@ -169,6 +172,11 @@ unlink_commit_object_from_branch(Context, Branch_Uri) :-
 link_commit_object_to_branch(Context, Branch_Uri, Commit_Uri) :-
     once(ask(Context,
              insert(Branch_Uri, ref:ref_commit, Commit_Uri))).
+
+
+reset_branch_head(Context, Branch_Uri, Commit_Uri) :-
+    ignore(unlink_commit_object_from_branch(Context,Branch_Uri)),
+    link_commit_object_to_branch(Context,Branch_Uri, Commit_Uri).
 
 attach_graph_to_commit(Context, Commit_Uri, Graph_Type, Graph_Name, Graph_Uri) :-
     once(ask(Context,
@@ -814,16 +822,32 @@ ensure_graph_sets_equal(Us_Repo_Askable, Them_Repo_Askable, Us_Commit_Uri, Them_
     ->  true
     ;   throw(error(graph_sets_not_equal(Us_Commit_Uri, Them_Commit_Uri)))).
 
-apply_commit(Us_Repo_Context, Them_Repo_Askable, Us_Branch_Name, Them_Commit_Uri, Author, New_Commit_Id, New_Commit_Uri) :-
+apply_commit_on_branch(Us_Repo_Context, Them_Repo_Askable, Us_Branch_Name, Them_Commit_Uri, Author, New_Commit_Id, New_Commit_Uri) :-
     get_time(Now),
-    apply_commit(Us_Repo_Context, Them_Repo_Askable, Us_Branch_Name, Them_Commit_Uri, Author, Now, New_Commit_Id, New_Commit_Uri).
+    apply_commit_on_branch(Us_Repo_Context, Them_Repo_Askable, Us_Branch_Name, Them_Commit_Uri, Author, Now, New_Commit_Id, New_Commit_Uri).
 
-apply_commit(Us_Repo_Context, Them_Repo_Askable, Us_Branch_Name, Them_Commit_Uri, Author, Timestamp, New_Commit_Id, New_Commit_Uri) :-
+apply_commit_on_branch(Us_Repo_Context, Them_Repo_Askable, Us_Branch_Name, Them_Commit_Uri, Author, Timestamp, New_Commit_Id, New_Commit_Uri) :-
     % look up current head
     (   branch_head_commit(Us_Repo_Context, Us_Branch_Name, Us_Commit_Uri)
     ->  true
     ;   throw(error(not_implemented))),
 
+    branch_name_uri(Us_Repo_Context, Us_Branch_Name, Us_Branch_Uri),
+
+    apply_commit_on_commit(Us_Repo_Context, Them_Repo_Askable, Us_Commit_Uri, Them_Commit_Uri, Author, Timestamp, New_Commit_Id, New_Commit_Uri),
+    unlink_commit_object_from_branch(Us_Repo_Context, Us_Branch_Uri),
+    link_commit_object_to_branch(Us_Repo_Context, Us_Branch_Uri, New_Commit_Uri),
+
+    % Note, this doesn't yet commit the commit graph.
+    % We may actually have written an invalid commit here.
+
+    true.
+
+apply_commit_on_commit(Us_Repo_Context, Them_Repo_Askable, Us_Commit_Uri, Them_Commit_Uri, Author, New_Commit_Id, New_Commit_Uri) :-
+    get_time(Now),
+    apply_commit_on_commit(Us_Repo_Context, Them_Repo_Askable, Us_Commit_Uri, Them_Commit_Uri, Author, Now, New_Commit_Id, New_Commit_Uri).
+
+apply_commit_on_commit(Us_Repo_Context, Them_Repo_Askable, Us_Commit_Uri, Them_Commit_Uri, Author, Timestamp, New_Commit_Id, New_Commit_Uri) :-
     % ensure graph sets are equivalent. if not, error
     ensure_graph_sets_equal(Us_Repo_Context, Them_Repo_Askable, Us_Commit_Uri, Them_Commit_Uri),
 
@@ -833,7 +857,13 @@ apply_commit(Us_Repo_Context, Them_Repo_Askable, Us_Branch_Name, Them_Commit_Uri
     Commit_Info = commit_info{author: Author, message: Message},
 
     % create new commit
-    insert_commit_object_on_branch(Us_Repo_Context, Commit_Info, Timestamp, Us_Branch_Name, New_Commit_Id, New_Commit_Uri),
+    insert_child_commit_object(
+        Us_Repo_Context,
+        Us_Commit_Uri,
+        Commit_Info,
+        Timestamp,
+        New_Commit_Id,
+        New_Commit_Uri),
 
     forall(graph_for_commit(Them_Repo_Askable,
                             Them_Commit_Uri,
@@ -922,11 +952,11 @@ test(apply_single_addition,
     branch_head_commit(Context4, "master", Commit_B_Uri),
 
     with_transaction(Context3,
-                     apply_commit(Context3, Context4, "master", Commit_B_Uri,
-                                  "rebaser",
-                                  12345,
-                                  _New_Commit_Id,
-                                  New_Commit_B_Uri),
+                     apply_commit_on_branch(Context3, Context4, "master", Commit_B_Uri,
+                                            "rebaser",
+                                            12345,
+                                            _New_Commit_Id,
+                                            New_Commit_B_Uri),
                      _),
 
     Repo_Descriptor = Descriptor1.repository_descriptor,
@@ -973,11 +1003,11 @@ test(apply_single_removal,
     branch_head_commit(Context4, "master", Commit_B_Uri),
 
     with_transaction(Context3,
-                     apply_commit(Context3, Context4, "master", Commit_B_Uri,
-                                  "rebaser",
-                                  12345,
-                                  _New_Commit_Id,
-                                  _New_Commit_Uri),
+                     apply_commit_on_branch(Context3, Context4, "master", Commit_B_Uri,
+                                            "rebaser",
+                                            12345,
+                                            _New_Commit_Id,
+                                            _New_Commit_Uri),
                      _),
 
     ask(Descriptor1,
@@ -1011,11 +1041,11 @@ test(apply_existing_addition,
     branch_head_commit(Context4, "master", Commit_B_Uri),
 
     with_transaction(Context3,
-                     apply_commit(Context3, Context4, "master", Commit_B_Uri,
-                                  "rebaser",
-                                  12345,
-                                  _New_Commit_Id,
-                                  _New_Commit_Uri),
+                     apply_commit_on_branch(Context3, Context4, "master", Commit_B_Uri,
+                                            "rebaser",
+                                            12345,
+                                            _New_Commit_Id,
+                                            _New_Commit_Uri),
                      _),
 
     ask(Descriptor1,
@@ -1055,11 +1085,11 @@ test(apply_nonexisting_removal,
     branch_head_commit(Context4, "master", Commit_B_Uri),
 
     with_transaction(Context3,
-                     apply_commit(Context3, Context4, "master", Commit_B_Uri,
-                                  "rebaser",
-                                  12345,
-                                  _New_Commit_Id,
-                                  _New_Commit_Uri),
+                     apply_commit_on_branch(Context3, Context4, "master", Commit_B_Uri,
+                                            "rebaser",
+                                            12345,
+                                            _New_Commit_Id,
+                                            _New_Commit_Uri),
                      _),
 
     ask(Descriptor1,

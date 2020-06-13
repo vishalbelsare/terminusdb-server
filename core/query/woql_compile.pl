@@ -187,7 +187,7 @@ resolve_prefix(Pre,Suf,URI) -->
         (   Full_Prefix = Prefixes.get(Pre)
         ->  true
         ;   format(atom(M), 'Unresolvable prefix ~q', [Pre:Suf]),
-            throw(error(syntax_error,M)))
+            throw(error(syntax_error(M))))
     },
     (   {v(Var_Name) = Suf}
     ->  view(bindings, Bindings),
@@ -493,8 +493,8 @@ convert_csv_options(Options,CSV_Options) :-
 
     (   memberchk('http://terminusdb.com/woql#convert'(Bool_Str),Options)
     ->  bool_convert(Bool_Str,Bool),
-        CSV_Options2 = [convert(Bool)]
-    ;   CSV_Options2 = CSV_Options1),
+        CSV_Options2 = [convert(Bool)|CSV_Options1]
+    ;   CSV_Options2 = [convert(false)|CSV_Options1]),
 
     CSV_Options = CSV_Options2.
 
@@ -820,13 +820,7 @@ compile_wf(select(VL,P), Prog) -->
     restrict(VL).
 compile_wf(using(Collection_String,P),Goal) -->
     update(default_collection,Old_Default_Collection,Default_Collection),
-    {
-        (   resolve_absolute_string_descriptor(Collection_String, Default_Collection)
-        ->  true
-        ;   resolve_relative_string_descriptor(Old_Default_Collection,
-                                               Collection_String,
-                                               Default_Collection))
-    },
+    { resolve_string_descriptor(Old_Default_Collection,Collection_String,Default_Collection) },
     update_descriptor_transactions(Default_Collection),
     compile_wf(P, Goal),
     update(default_collection,_,Old_Default_Collection).
@@ -876,7 +870,7 @@ compile_wf(get(Spec,File_Spec), Prog) -->
 
         (   memberchk('http://terminusdb.com/woql#type'("csv"),New_Options)
         ->  indexing_term(Spec,Header,Values,Bindings,Indexing_Term),
-            csv_term(Path,Has_Header,Header,Values,Indexing_Term,Prog,New_Options)
+            csv_term(Path,Has_Header,Header,Values,Indexing_Term,Prog,CSV_Options)
         ;   memberchk('http://terminusdb.com/woql#type'("turtle"),New_Options),
             Has_Header = false
         ->  turtle_term(Path,BVars,Prog,CSV_Options)
@@ -1022,7 +1016,7 @@ compile_wf(re(P,S,L),Re) -->
     resolve(P,PE),
     resolve(S,SE),
     resolve(L,LE),
-    { marshall_args(utils:re(SE,PE,LE),Re) }.
+    { marshall_args(utils:re(PE,SE,LE),Re) }.
 compile_wf(split(S,P,L),Split) -->
     resolve(S,SE),
     resolve(P,PE),
@@ -1079,7 +1073,6 @@ compile_wf(timestamp_now(X), (get_time(Timestamp)))
     }.
 compile_wf(size(Path,Size),Goal) -->
     resolve(Size,SizeE),
-    peek(Context),
     {
         (   resolve_absolute_string_descriptor_and_graph(Path, Descriptor, Graph)
         ->  true
@@ -1088,6 +1081,7 @@ compile_wf(size(Path,Size),Goal) -->
         )
     },
     update_descriptor_transactions(Descriptor),
+    peek(Context),
     {
         Context_2 = (Context.put(_{ default_collection : Descriptor })),
         assert_read_access(Context_2),
@@ -1104,7 +1098,6 @@ compile_wf(size(Path,Size),Goal) -->
     }.
 compile_wf(triple_count(Path,Count),Goal) -->
     resolve(Count,CountE),
-    peek(Context),
     {
         (   resolve_absolute_string_descriptor_and_graph(Path, Descriptor, Graph)
         ->  true
@@ -1113,6 +1106,7 @@ compile_wf(triple_count(Path,Count),Goal) -->
         )
     },
     update_descriptor_transactions(Descriptor),
+    peek(Context),
     {
         Context_2 = (Context.put(_{ default_collection : Descriptor })),
         assert_read_access(Context_2),
@@ -1600,10 +1594,11 @@ test(named_get, [])
 
     query_test_response(terminus_descriptor{}, Query, JSON),
     [First|_] = JSON.bindings,
+
     _{'Bike_Number': _{'@type':'http://www.w3.org/2001/XMLSchema#string',
                       '@value':"W21477"},
-      'Duration': _{'@type':'http://www.w3.org/2001/XMLSchema#decimal',
-                    '@value':790}
+      'Duration': _{'@type':'http://www.w3.org/2001/XMLSchema#string',
+                    '@value':"790"}
      } :< First.
 
 test(named_get_two, [])
@@ -1693,18 +1688,18 @@ test(named_get_two, [])
     [Res|_] = JSON.bindings,
     _{'Bike':_{'@type':'http://www.w3.org/2001/XMLSchema#string',
                '@value':"W00247"},
-      'Duration':_{'@type':'http://www.w3.org/2001/XMLSchema#decimal',
-                   '@value':3548},
-      'End_ID':_{'@type':'http://www.w3.org/2001/XMLSchema#decimal',
-                 '@value':31620},
+      'Duration':_{'@type':'http://www.w3.org/2001/XMLSchema#string',
+                   '@value':"3548"},
+      'End_ID':_{'@type':'http://www.w3.org/2001/XMLSchema#string',
+                 '@value':"31620"},
       'End_Station':_{'@type':'http://www.w3.org/2001/XMLSchema#string',
                       '@value':"5th & F St NW"},
       'End_Time':_{'@type':'http://www.w3.org/2001/XMLSchema#string',
                    '@value':"2011-01-01 01:00:37"},
       'Member_Type':_{'@type':'http://www.w3.org/2001/XMLSchema#string',
                       '@value':"Member"},
-      'Start_ID':_{'@type':'http://www.w3.org/2001/XMLSchema#decimal',
-                   '@value':31620},
+      'Start_ID':_{'@type':'http://www.w3.org/2001/XMLSchema#string',
+                   '@value':"31620"},
       'Start_Station':_{'@type':'http://www.w3.org/2001/XMLSchema#string',
                         '@value':"5th & F St NW"},
       'Start_Time':_{'@type':'http://www.w3.org/2001/XMLSchema#string',
@@ -2268,7 +2263,7 @@ test(metadata_branch, [
                 State = _-Path,
                 metadata:set_current_db_path(Path),
                 create_db_without_schema('admin|test', 'test','a test'))),
-         cleanup((metadata:unset_current_db_path(Path),
+         cleanup((metadata:unset_current_db_path,
                   teardown_temp_store(State)))
      ]
     ) :-
@@ -2301,7 +2296,7 @@ test(metadata_graph, [
                 State = _-Path,
                 metadata:set_current_db_path(Path),
                 create_db_without_schema('admin|test', 'test','a test'))),
-         cleanup((metadata:unset_current_db_path(Path),
+         cleanup((metadata:unset_current_db_path,
                   teardown_temp_store(State)))
      ]
     ) :-
@@ -2334,7 +2329,7 @@ test(metadata_triple_count_json, [
                 State = _-Path,
                 metadata:set_current_db_path(Path),
                 create_db_without_schema('admin|test', 'test','a test'))),
-         cleanup((metadata:unset_current_db_path(Path),
+         cleanup((metadata:unset_current_db_path,
                   teardown_temp_store(State)))
      ]) :-
 
@@ -2369,7 +2364,7 @@ test(metadata_triple_count_json, [
                 State = _-Path,
                 metadata:set_current_db_path(Path),
                 create_db_without_schema('admin|test', 'test','a test'))),
-         cleanup((metadata:unset_current_db_path(Path),
+         cleanup((metadata:unset_current_db_path,
                   teardown_temp_store(State)))
      ]) :-
 
@@ -2399,6 +2394,42 @@ test(metadata_triple_count_json, [
     (Binding.'Size'.'@value' = Val),
     Val > 0,
     Val < 1000.
+
+test(metadata_size_commits_json, [
+         setup((setup_temp_store(State),
+                State = _-Path,
+                metadata:set_current_db_path(Path),
+                create_db_without_schema('admin|test', 'test','a test'))),
+         cleanup((metadata:unset_current_db_path,
+                  teardown_temp_store(State)))
+     ]) :-
+
+    resolve_absolute_string_descriptor("admin/test", Descriptor),
+    Commit_Info = commit_info{ author : "test", message : "testing semantics"},
+    create_context(Descriptor, Commit_Info, Context),
+    with_transaction(
+        Context,
+        ask(Context, (insert(a, b, c),
+                      insert(d, e, f),
+                      insert(d, e, a),
+                      insert(f, g, h),
+                      insert(h, j, k))),
+        _Meta_Data
+    ),
+
+    Query = _{'@type' : "Size",
+              resource : _{'@type' : "xsd:string",
+                           '@value' : "admin/test/local/_commits"},
+              size : _{'@type' : "Variable",
+                       variable_name :
+                       _{'@type' : "xsd:string",
+                         '@value' : "Size"}}},
+
+    query_test_response(Descriptor, Query, JSON),
+    [Binding] = (JSON.bindings),
+    (Binding.'Size'.'@value' = Val),
+    Val > 0,
+    Val < 15000.
 
 test(ast_disjunction_test, [
          setup((setup_temp_store(State),

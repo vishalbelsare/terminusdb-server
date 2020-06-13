@@ -17,16 +17,34 @@ Rust installation guide.
 
 https://www.rust-lang.org/tools/install
 
-### SWIPL
+### swi-prolog
 
-To use Terminus Server, you will need the SWIPL installation of
-prolog. To install this in Debian variants simply use the apt package
+To use Terminus Server, you will need the swi-prolog installation of
+prolog. The TerminusDB team tends to use the latest stable for local
+development and packaging, but likely, other versions of swi-prolog since
+8.0.3 will work as well.
+Currently we don't have an officially supported version of swi-prolog,
+but latest stable is likely to work.
+
+To install swi-prolog in Debian variants simply use the apt package
 manager:
 
 ```
 apt install swi-prolog
 ```
-Once installed, you will have to install two library dependencies from SWIPL.
+
+the swi-prolog project website also contains downloadable packages for
+swi-prolog for different operating systems:
+[stable](https://www.swi-prolog.org/download/stable)
+[devel](https://www.swi-prolog.org/download/devel).
+
+If you want to experiment with multiple builds of swi-prolog, you may
+be interested in [swivm](https://github.com/fnogatz/swivm). This tool
+lets you build and install multiple versions of swi-prolog and switch
+between them.
+
+Once installed, you will have to install one library dependency for
+our storage backend: [terminus_store_prolog](https://github.com/terminusdb/terminus_store_prolog).
 
 This can be done by typing:
 
@@ -48,19 +66,19 @@ For built-in help, use ?- help(Topic). or ?- apropos(Word).
 The Terminus Server source tree should then be cloned from GitHub:
 
 ```
-git clone https://github.com/terminusdb/terminus-server
-cd terminus-server
+git clone https://github.com/terminusdb/terminusdb-server
+cd terminusdb-server
 git submodule init
 git submodule update
 ```
 
 You need to set the admin user password which is used as a
 super-user API key for access. This can be done with the
-`db_util` script. The script should also be used to
+`db_init` script. The script should also be used to
 configure the server name, as shown in the example.
 
 ```
-utils/db_util -k "my_password_here" -s "my_server_name_here"
+utils/db_init -k "my_password_here" -s "my_server_name_here"
 ```
 
 At this point you can enter the terminusDB directory and start the server:
@@ -86,7 +104,7 @@ https://www.rust-lang.org/tools/install
 
 ### SWIPL
 
-SWI-Prolog is needed to run terminus-server. Install SWI-PROLOG with:
+SWI-Prolog is needed to run terminusdb-server. Install SWI-PROLOG with:
 
 ```
 sudo dnf install pl pl-devel
@@ -116,19 +134,19 @@ For built-in help, use ?- help(Topic). or ?- apropos(Word).
 The Terminus Server source tree should then be cloned from GitHub:
 
 ```
-git clone https://github.com/terminusdb/terminus-server
-cd terminus-server
+git clone https://github.com/terminusdb/terminusdb-server
+cd terminusdb-server
 git submodule init
 git submodule update
 ```
 
 You need to set the admin user password which is used as a
 super-user API key for access. This can be done with the
-`db_util` script. The script should also be used to
+`db_init` script. The script should also be used to
 configure the server name, as shown in the example.
 
 ```
-utils/db_util -k "my_password_here" -s "my_server_name_here"
+utils/db_init -k "my_password_here" -s "my_server_name_here"
 ```
 
 At this point you can enter the terminusDB directory and start the server:
@@ -182,19 +200,19 @@ For built-in help, use ?- help(Topic). or ?- apropos(Word).
 The Terminus Server source tree should then be cloned from GitHub:
 
 ```
-git clone https://github.com/terminusdb/terminus-server
-cd terminus-server
+git clone https://github.com/terminusdb/terminusdb-server
+cd terminusdb-server
 git submodule init
 git submodule update
 ```
 
 You need to set the admin user password which is used as a
 super-user API key for access. This can be done with the
-`db_util` script. The script should also be used to
+`db_init` script. The script should also be used to
 configure the server name, as shown in the example.
 
 ```
-utils/db_util -k "my_password_here" -s "my_server_name_here"
+utils/db_init -k "my_password_here" -s "my_server_name_here"
 ```
 
 At this point you can enter the terminusDB directory and start the server:

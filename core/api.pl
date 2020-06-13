@@ -1,11 +1,14 @@
 :- module(api, [
               % db_delete.pl
               delete_db/1,
+              try_delete_db/1,
+              force_delete_db/1,
 
-              % db_init.pl
+              % db_create.pl
               create_db/4,
               try_delete_db/1,
               try_create_db/4,
+              create_ref_layer/2,
 
               % init.pl
               initialize_config/4,
@@ -23,7 +26,8 @@
               branch_create/4,
 
               % db_rebase.pl
-              rebase_on_branch/7,
+              rebase_on_branch/8,
+              cycle_context/4,
 
               % db_fast_forward.pl
               % fast_forward_branch/4
@@ -39,11 +43,21 @@
               remote_fetch/4,
 
               % db_clone.pl
-              clone/7
+              clone/7,
+
+              % db_push.pl
+              push/6,
+
+              % db_unpack.pl
+              unpack/2,
+
+              % db_pull.pl
+              pull/6
+
           ]).
 
 :- use_module(api/init).
-:- use_module(api/db_init).
+:- use_module(api/db_create).
 :- use_module(api/db_delete).
 :- use_module(api/db_graph).
 :- use_module(api/db_branch).
@@ -52,3 +66,6 @@
 :- use_module(api/db_pack).
 :- use_module(api/db_fetch).
 :- use_module(api/db_clone).
+:- use_module(api/db_push).
+:- use_module(api/db_unpack).
+:- use_module(api/db_pull).
