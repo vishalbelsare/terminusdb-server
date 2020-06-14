@@ -559,8 +559,6 @@ compile_predicate_descriptor(P/N,Args,Goal) -->
     mapm(resolve,Args_Resolved,Modes_Types,Pre_Goals_Post_Goals),
 
     { zip(Pre_Goals, Post_Goals, Pre_Goals_Post_Goals),
-      (   Resource
-      ->  lookup_resource(Resource_Var)
       Predicate_Goal =.. [System_P|Resolved],
       append([Pre_Goals,[Predicate_Goal],Post_Goals], Goal_List),
       xfy_list(',',Goal, Goal_List) }.
@@ -596,11 +594,6 @@ type_check(l(_), Type, _, true) :-
     type_check_literal(Type).
 
 
-query_term_properties(t/3,t//3,[any,any,any],[node,node,obj]).
-query_term_properties(t/4,t//4,[any,any,any,ground],[node,node,obj,resource]).
-query_term_properties(insert/3,insert//3,[any,any,any],[node,node,obj]).
-query_term_properties(insert/4,insert//4,[any,any,any,ground],[node,node,obj,resource]).
-query_term_properties(read_object/3,read_object//3,[node,number,dict]).
 
 /*
 compile_wf(read_object(Doc_ID,N,Doc),
@@ -1196,8 +1189,8 @@ list_disjunction(L,Goal) :-
 :- begin_tests(woql_compile).
 
 test(basic_triple,[]) :-
-    Term = (
-        t(n(a),n(b),n(c)
+    _Term = (
+        t(n(a),n(b),n(c))
     ),
     true.
 
